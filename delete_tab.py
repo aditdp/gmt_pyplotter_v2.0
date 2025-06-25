@@ -12,18 +12,14 @@ from customtkinter import (
     CTkOptionMenu,
     filedialog,
 )
-import ctypes
+import ctypes, json, queue
 from tkinter import messagebox, Canvas
 from _date_delay_entry import DateEntry
 
 # from CTkListbox import CTkListbox
 from PIL import Image, ImageTk
-from time import sleep
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-
-# from tkcalendar import DateEntry
-# from utils import *
 from ctk_tooltip import CTkToolTip
 from ctk_coordinate_gui import CoordWindow
 from ctk_scrollable_dropdown import CTkScrollableDropdown
@@ -35,6 +31,9 @@ if os.name == "nt":
     print(scalefactor)
     ctk.set_widget_scaling(1 / scalefactor)
     ctk.set_window_scaling(1 / scalefactor)
+
+else:
+    scalefactor = 1
 
 
 def resize_image(file):
@@ -48,7 +47,7 @@ def resize_image(file):
                 image = Image.open(os.path.join(path, image_dir, file))
                 w, h = image.size
                 new_w, new_h = w // (2**i), h // (2**i)
-                resized = image.resize((new_w, new_h), Image.LANCZOS)
+                resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
                 resized.save(os.path.join(path, image_dir, filename), optimize=True)
 
     except IOError:
@@ -64,12 +63,13 @@ class MainApp(ctk.CTk):
         self.minsize(700, 550)
         resize_image("map_simple_0.png")
         resize_image("map_relief_0.jpg")
+        output_dir = self.load_state()
 
         self.frame_map_param = CTkFrame(self, width=210, height=550)
         self.frame_layers = CTkFrame(self, width=490, height=550)
         self.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
         self.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
-        self.get_name = MapFileName(self, self.frame_map_param)
+        self.get_name = MapFileName(self, self.frame_map_param, output_dir)
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
         self.get_projection = MapProjection(self, self.frame_map_param)
         self.get_layers = LayerMenu(self, self.frame_layers)
@@ -79,6 +79,7 @@ class MainApp(ctk.CTk):
         )
         button.place(relx=0, rely=0.95)
         self.orig = True
+        self.protocol("WM_DELETE_WINDOW", self.closing)
         self.mainloop()
 
     def scalling(self):
@@ -91,9 +92,30 @@ class MainApp(ctk.CTk):
             ctk.set_window_scaling(1)
             self.orig = False
 
+    def save_state(self):
+        state = {"output_dir": self.get_name.output_dir.get()}
+
+        with open("saved_param.json", "w") as f:
+            json.dump(state, f)
+
+    def closing(self):
+        self.save_state()
+        self.withdraw()
+        self.quit()
+        self.destroy()
+
+    def load_state(self):
+        try:
+            with open("saved_param.json", "r") as f:
+                state = json.load(f)
+                output_dir = state["output_dir"]
+            return output_dir
+        except FileNotFoundError:
+            return os.path.expanduser("~")
+
 
 class MapFileName(CTkFrame):
-    def __init__(self, main: MainApp, mainframe):
+    def __init__(self, main: MainApp, mainframe, output_dir):
         super().__init__(mainframe)
         self.main = main
         self.place(relx=0.01, rely=0.01, relheight=0.24, relwidth=0.95)
@@ -107,7 +129,7 @@ class MapFileName(CTkFrame):
                 self.rowconfigure(i, weight=0, uniform="a")
 
         # self.output_dir = StringVar(self, value=os.path.expanduser("~"))
-        self.output_dir = StringVar(self, value="D:/guii")
+        self.output_dir = StringVar(self, value=output_dir)
         self.file_name = StringVar(self, value="untitled_map")
         self.extension = StringVar(self, value=".png")
         label = CTkLabel(
@@ -539,7 +561,9 @@ class MapPreview:
         self.main = main
         self.preview_status = "off"
         self.button_ = button_frame
+        self.main_queue = queue.Queue()
         self.map_preview_buttons()
+        self.main.after(100, self._check_queue)
 
     def map_preview_buttons(self):
         self.button_preview = CTkButton(
@@ -567,12 +591,13 @@ class MapPreview:
 
     def map_preview_toggle(self):
         if self.preview_status == "off":
+            self.prev_coord = set([r.get() for r in roi])
             self.print_script()
-            # self.start_long_process()
+
             self.threading_process(
                 self.gmt_execute,
                 args=[
-                    self.main.get_name.file_name.get(),
+                    self.main.get_name.name_script,
                     self.main.get_name.output_dir.get(),
                 ],
                 name="generate Preview Map",
@@ -585,32 +610,73 @@ class MapPreview:
             self.button_preview_refresh.pack_forget()
 
     def map_preview_refresh(self):
-        self.map_preview_off()
+        width = self.canvas.winfo_width()
+
+        height = self.canvas.winfo_height()
+        self.canvas.create_rectangle(
+            0,
+            0,
+            width,
+            height,
+            fill="purple",
+            outline="darkblue",
+            width=2,
+            stipple="gray50",
+            tags="loading",
+        )  # 50% "transparent" effect
+        self.canvas.create_text(
+            int(width / 2),
+            int(height / 2),
+            anchor="nw",
+            text="LOADING...",
+            font=("Consolas", 25),
+            fill="black",
+            tags="loading",
+        )
         self.print_script()
         self.threading_process(
             self.gmt_execute,
             args=[
-                self.main.get_name.file_name.get(),
+                self.main.get_name.name_script,
                 self.main.get_name.output_dir.get(),
             ],
             name="refresh Preview Map",
+            refresh=True,
         )
 
-    def map_preview_on(self):
+    def refreshed(self):
+        self.canvas.delete("loading")
+        for r in roi:
+            self.prev_coord.add(r.get())
+        print(len(self.prev_coord))
+        if len(self.prev_coord) != 4:
+            self.map_preview_off()
+            print(self.prev_coord)
+            print("coordinate berubah")
+            self.map_preview_on(True)
+        else:
+            print(self.prev_coord)
+            print("coordinate tetap")
+            self.loading_image()
+
+            self.canvas.delete("map")
+            self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
+
+    def map_preview_on(self, success_status, message=""):
+        if not success_status:
+            print(f"Map generation failed: {message}")
+            messagebox.showerror("Map Error", message)  # Show error to user
+            # Handle UI for failure (e.g., revert status, don't show map)
+            self.preview_status = "off"
+            self.button_preview_refresh.pack_forget()
+            return
         cur_x = self.main.winfo_x()
         cur_y = self.main.winfo_y()
-        print("sebelum loading gambar")
-        image = Image.open(self.main.get_name.dir_prename_map)
 
-        print("setelah loading gambar")
-        ratio = image.width / image.height
+        new_width = self.loading_image()
 
-        new_width = int(700 + (ratio * 550))
-        image_resize = image.resize((int((new_width - 710)), int(545)))
+        resize = f"{new_width}x550+{cur_x}+{cur_y-37}"
 
-        resize = f"{new_width}x550+{cur_x}+{cur_y}"
-
-        self.imagetk = ImageTk.PhotoImage(image_resize)
         self.main.geometry(resize)
 
         self.main.frame_map_param.pack(side="left")
@@ -620,7 +686,10 @@ class MapPreview:
         self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 700)
 
         self.frame_preview.pack(side="left", fill="both", anchor="nw")
-        self.expand_window(self.imagetk)
+        self.canvas = Canvas(self.frame_preview, width=new_width - 700, height=550)
+        self.canvas.pack(expand=True, fill="both")
+        self.button_preview_refresh.pack(side="left")
+        self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
 
     def map_preview_off(self):
         print(f"window size={self.main.winfo_width()}x{self.main.winfo_height()}")
@@ -629,7 +698,7 @@ class MapPreview:
         cur_y = self.main.winfo_y()
         print(cur_x)
         print(cur_y)
-        resize = f"700x550+{cur_x}+{cur_y}"
+        resize = f"700x550+{cur_x}+{cur_y-37}"
         self.main.geometry(resize)
         self.main.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
         self.main.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
@@ -671,161 +740,100 @@ class MapPreview:
                 prev_script.write(f"\t{script}\n")
             prev_script.write(f"gmt end\n")
 
-    def run_external_process(self, program, args, callback):
-        """
-        Function to be run in a separate thread.
-        It executes the external program and then calls a callback with the result.
-        """
-        try:
-            print(f"[{threading.current_thread().name}] Starting external process...")
-            # Use platform-specific command
-            if sys.platform.startswith("linux") or sys.platform == "darwin":
-                cmd = [program] + args
-            elif sys.platform == "win32":
-                cmd = [
-                    "cmd",
-                    "/c",
-                    program,
-                ] + args  # Use cmd /c for Windows to run common commands
-            else:
-                print("Unsupported OS.")
-                callback("Error: Unsupported OS", None)
-                return
+    def threading_process(self, worker, args, name, refresh=False):
+        def thread_wrapper():
+            try:
+                worker(*args, self.main_queue, refresh)
+            except Exception as e:
+                # Catch any unexpected errors in the worker itself and report via queue
+                self.main_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
 
-            process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-            )
-            # This 'wait' happens in the new thread, NOT the main Tkinter thread
-            stdout, stderr = process.communicate()
-            return_code = process.returncode
-            print(
-                f"[{threading.current_thread().name}] Process finished with code: {return_code}"
-            )
-            callback(stdout, stderr, return_code)  # Call the main thread via callback
-        except FileNotFoundError:
-            print(
-                f"[{threading.current_thread().name}] Error: Program '{program}' not found."
-            )
-            callback(None, f"Error: Program '{program}' not found.", -1)
-        except Exception as e:
-            print(f"[{threading.current_thread().name}] An error occurred: {e}")
-            callback(None, f"An error occurred: {e}", -1)
-
-    def threading_process(self, worker, args, name):
-        self.process_thread = threading.Thread(target=worker, args=args, name=name)
+        self.process_thread = threading.Thread(target=thread_wrapper, name=name)
         self.process_thread.daemon = True
         self.process_thread.start()
 
-    def start_long_process(self):
-        print("Process started (running in background)...")
-        self.button_preview.configure(
-            state="disabled"
-        )  # Disable button to prevent multiple clicks
-        self.button_preview_refresh.configure(
-            state="disabled"
-        )  # Disable button to prevent multiple clicks
-
-        # Define the command and arguments based on OS
-        if sys.platform.startswith("linux") or sys.platform == "darwin":
-            program = "sleep"
-            args = ["10"]  # Sleeps for 5 seconds
-        elif sys.platform == "win32":
-            program = "timeout"
-            args = ["/t", "10", "/nobreak"]  # Sleeps for 5 seconds (cmd.exe specific)
-        else:
-            print("Unsupported OS for this example.")
-            return
-
-        # Create and start a new thread
-        self.process_thread = threading.Thread(
-            target=self.run_external_process,
-            args=(program, args, self.on_process_complete),
-            name="ExternalProcessThread",  # Give it a name for easier debugging
-        )
-        self.process_thread.daemon = (
-            True  # Allow main program to exit even if thread is running
-        )
-        self.process_thread.start()
-
-    def on_process_complete(self, stdout, stderr, return_code):
-        """
-        This method is called from the worker thread.
-        It updates the GUI (which MUST be done in the main thread).
-        """
-        if return_code is not None:
-            if return_code == 0:
-                message = "Process finished successfully!"
-                print(message)
-            else:
-                message = f"Process finished with error (code {return_code})."
-                print(message)
-
-            if stdout:
-                print("Process Stdout:\n", stdout)
-            if stderr:
-                print("Process Stderr:\n", stderr)
-
-        else:
-            print("Process encountered an error.")
-
-        self.button_preview.configure(state=tk.NORMAL)  # Re-enable the button
-        self.button_preview_refresh.configure(state=tk.NORMAL)  # Re-enable the button
-
-    def gmt_execute(self, script_name, output_dir):
+    def gmt_execute(self, script_name, output_dir, main_queue, refresh):
         cwd = os.getcwd()
         os.chdir(output_dir)
+        if os.name == "posix":
+            os.system(f"chmod +x {script_name}")
         match os.name:
             case "nt":
-                command = f"{script_name}.bat"
+                command = script_name
             case _:
-                os.system(f"chmod +x {output_dir}/{script_name}.gmt")
-                command = f"./{script_name}.gmt"
+                command = f"./{script_name}"
 
         try:
-            print(
-                f"Running '{output_dir}/{script_name}.bat' with subprocess.   Popen()..."
-            )
+            print(f"Running '{output_dir}/{script_name}' with subprocess.Popen()...")
             # exit_code = os.system(f"{name}.bat")
             generate_map = subprocess.Popen(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
             stdout, stderr = generate_map.communicate()
             return_code = generate_map.returncode
             print(
                 f"[{threading.current_thread().name}] Process finished with     code: {return_code}"
             )
-            if return_code is not None:
-                if return_code == 0:
-                    print(return_code)
-                    self.map_preview_on()
-                    print("done map preview")
-                    self.button_preview_refresh.pack(side="left", padx=(5, 5))
+            if return_code == 0:
+                if refresh == False:
+                    main_queue.put(
+                        ("COMPLETE", True, "GMT script executed successfully.")
+                    )
+                else:
+                    main_queue.put(
+                        ("REFRESHED", True, "GMT script executed successfully.")
+                    )
 
+            else:
+                main_queue.put(
+                    "COMPLETE",
+                    False,
+                    f"GMT script failed. Code: {return_code}\nStderr: {stderr}",
+                )
             if stdout:
                 print("Process Stdout:\n", stdout)
             if stderr:
                 print("Process Stderr:\n", stderr)
 
             # penerusnya apa
-        except FileNotFoundError:
-            print(
-                f"[{threading.current_thread().name}] Error: Program '{command} ' not found."
+        except FileNotFoundError as e:
+            main_queue.put(
+                ("COMPLETE", False, f"Error: Program '{command}' not found. ({e})")
             )
 
         except Exception as e:
-            f"[{threading.current_thread().name}] An error occurred: {e}"
-        os.chdir(cwd)
+            main_queue.put(("COMPLETE", False, f"An unexpected error occurred: {e}"))
+        finally:
+            os.chdir(cwd)
 
-    def expand_window(self, image):
+    def _check_queue(self):
+        try:
+            message_type, *data = self.main_queue.get_nowait()
+            if message_type == "COMPLETE":
+                success_status, message = data
+                self.map_preview_on(success_status, message)  # Call GUI update
+            elif message_type == "REFRESHED":
+                self.refreshed()
+            elif message_type == "STATUS":  # For optional progress updates
+                self.main.status_label.configure(
+                    text=f"Status: {data[0]}"
+                )  # Assuming you have a status_label
+        except queue.Empty:
+            pass  # No messages in queue
 
-        self.canvas = Canvas(self.frame_preview, width=1100, height=550)
-        self.canvas.pack(expand=True, fill="both")
-        # self.canvas.image = image
-        self.canvas.create_image(5, 0, image=image, anchor="nw")
+        self.main.after(100, self._check_queue)  # Reschedule itself
 
-        self.canvas.create_text(1, 550, text="askldfjsaldkf", anchor="sw")
-
-        print(f"winfo {self.canvas.winfo_width()} {self.canvas.winfo_height()}")
+    def loading_image(self):
+        image = Image.open(self.main.get_name.dir_prename_map)
+        ratio = image.width / image.height
+        new_width = int(700 + (ratio * 550))
+        image_resize = image.resize((int((new_width - 710)), int(545)))
+        self.imagetk = ImageTk.PhotoImage(image_resize)
+        return new_width
 
 
 class LayerParameters:
