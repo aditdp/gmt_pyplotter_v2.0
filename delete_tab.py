@@ -3,6 +3,7 @@ import os, threading, subprocess
 from customtkinter import (
     StringVar,
     DoubleVar,
+    BooleanVar,
     CTkButton,
     CTkLabel,
     CTkEntry,
@@ -11,6 +12,8 @@ from customtkinter import (
     CTkCheckBox,
     CTkOptionMenu,
     filedialog,
+    DISABLED,
+    NORMAL,
 )
 import ctypes, json, queue
 from tkinter import messagebox, Canvas
@@ -59,7 +62,7 @@ class MainApp(ctk.CTk):
         super().__init__()
 
         self.title("gmt_pyplotter")
-        self.geometry("700x550")
+        self.geometry("700x550+400+100")
         self.minsize(700, 550)
         resize_image("map_simple_0.png")
         resize_image("map_relief_0.jpg")
@@ -254,12 +257,12 @@ class MapCoordinate(CTkFrame):
         self.coord_picked = False
 
         def create_entry(text_var):
-            return ctk.CTkEntry(
+            return CTkEntry(
                 self,
                 width=80,
                 font=("Consolas", 14),
                 textvariable=text_var,
-                state="disabled",
+                state=DISABLED,
             )
 
         for i in range(5):
@@ -324,7 +327,7 @@ class MapCoordinate(CTkFrame):
         return f"-R{roi[0].get()}/{roi[1].get()}/{roi[2].get()}/{roi[3].get()}"
 
     def update_coor_entry(self):
-        self.coord_button.configure(state="disabled")
+        self.coord_button.configure(state=DISABLED)
         if self.coord_picked == False:
             coord = None
         else:
@@ -342,7 +345,7 @@ class MapCoordinate(CTkFrame):
             self.coord_button.configure(text="Edit Coordinate")
         except ValueError:
             pass
-        self.coord_button.configure(state="normal")
+        self.coord_button.configure(state=NORMAL)
 
 
 class MapProjection(CTkFrame):
@@ -378,24 +381,24 @@ class MapProjection(CTkFrame):
 
         def select_projection_option():
             if self.projection_option.get() == "scale":
-                scale_entry.configure(state="normal", text_color="white")
+                scale_entry.configure(state=NORMAL, text_color="white")
                 scale_unit.configure(text_color="white")
-                width_entry.configure(state="disabled", text_color="gray")
+                width_entry.configure(state=DISABLED, text_color="gray")
                 width_unit.configure(text_color="gray")
                 scale_radio.configure(text_color="white")
                 width_radio.configure(text_color="gray")
 
             elif self.projection_option.get() == "width":
-                scale_entry.configure(state="disabled", text_color="gray")
+                scale_entry.configure(state=DISABLED, text_color="gray")
                 scale_unit.configure(text_color="gray")
-                width_entry.configure(state="normal", text_color="white")
+                width_entry.configure(state=NORMAL, text_color="white")
                 width_unit.configure(text_color="white")
                 scale_radio.configure(text_color="gray")
                 width_radio.configure(text_color="white")
             else:
-                scale_entry.configure(state="disabled", text_color="gray")
+                scale_entry.configure(state=DISABLED, text_color="gray")
                 scale_unit.configure(text_color="gray")
-                width_entry.configure(state="disabled", text_color="gray")
+                width_entry.configure(state=DISABLED, text_color="gray")
                 width_unit.configure(text_color="gray")
                 scale_radio.configure(text_color="gray")
                 width_radio.configure(text_color="gray")
@@ -511,9 +514,6 @@ class LayerMenu(ctk.CTkFrame):
             command=self.add_tab,
         )
 
-    def generate_temporary_map(self):
-        pass
-
     def delete_tab(self):
         active_tab = self.layer_control.get()
         deleting_layer = messagebox.askyesno(
@@ -563,6 +563,7 @@ class MapPreview:
         self.button_ = button_frame
         self.main_queue = queue.Queue()
         self.map_preview_buttons()
+        self.get_window_offset()
         self.main.after(100, self._check_queue)
 
     def map_preview_buttons(self):
@@ -592,6 +593,7 @@ class MapPreview:
     def map_preview_toggle(self):
         if self.preview_status == "off":
             self.prev_coord = set([r.get() for r in roi])
+            self.button_preview.configure(state=DISABLED)
             self.print_script()
 
             self.threading_process(
@@ -610,6 +612,22 @@ class MapPreview:
             self.button_preview_refresh.pack_forget()
 
     def map_preview_refresh(self):
+
+        self.button_preview.configure(state=DISABLED)
+        self.button_preview_refresh.configure(state=DISABLED)
+        self.block_canvas_loading()
+        self.print_script()
+        self.threading_process(
+            self.gmt_execute,
+            args=[
+                self.main.get_name.name_script,
+                self.main.get_name.output_dir.get(),
+            ],
+            name="refresh Preview Map",
+            refresh=True,
+        )
+
+    def block_canvas_loading(self):
         width = self.canvas.winfo_width()
 
         height = self.canvas.winfo_height()
@@ -627,28 +645,17 @@ class MapPreview:
         self.canvas.create_text(
             int(width / 2),
             int(height / 2),
-            anchor="nw",
-            text="LOADING...",
-            font=("Consolas", 25),
+            anchor="center",
+            text="Loading Map",
+            font=("Consolas", 20),
             fill="black",
             tags="loading",
         )
-        self.print_script()
-        self.threading_process(
-            self.gmt_execute,
-            args=[
-                self.main.get_name.name_script,
-                self.main.get_name.output_dir.get(),
-            ],
-            name="refresh Preview Map",
-            refresh=True,
-        )
 
     def refreshed(self):
-        self.canvas.delete("loading")
         for r in roi:
             self.prev_coord.add(r.get())
-        print(len(self.prev_coord))
+
         if len(self.prev_coord) != 4:
             self.map_preview_off()
             print(self.prev_coord)
@@ -658,9 +665,27 @@ class MapPreview:
             print(self.prev_coord)
             print("coordinate tetap")
             self.loading_image()
-
             self.canvas.delete("map")
             self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
+
+        self.canvas.delete("loading")
+        self.button_preview.configure(state=NORMAL)
+        self.button_preview_refresh.configure(state=NORMAL)
+
+    def get_window_offset(self):
+        x_before = self.main.winfo_x()
+        y_before = self.main.winfo_y()
+        print(f"before =\n{x_before}\n{y_before}\n")
+
+        self.main.geometry(f"800x550")
+        x_after = self.main.winfo_x()
+        y_after = self.main.winfo_y()
+        self.main.geometry(f"700x550")
+        print(f"after =\n{x_after}\n{y_after}\n")
+        x_offset = x_after - x_before
+        y_offset = y_after - y_before
+        print(f"offset =\n{x_offset}\n{y_offset}\n")
+        return [x_offset, y_offset]
 
     def map_preview_on(self, success_status, message=""):
         if not success_status:
@@ -690,6 +715,8 @@ class MapPreview:
         self.canvas.pack(expand=True, fill="both")
         self.button_preview_refresh.pack(side="left")
         self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
+        self.button_preview.configure(state=NORMAL)
+        self.button_preview_refresh.configure(state=NORMAL)
 
     def map_preview_off(self):
         print(f"window size={self.main.winfo_width()}x{self.main.winfo_height()}")
@@ -724,7 +751,7 @@ class MapPreview:
                     case "Earth relief":
                         script = get_layers.grdimage.script
                     case "Contour line":
-                        script = get_layers.contour.script.script
+                        script = get_layers.contour.script
                     case "Earthquake plot":
                         script = get_layers.earthquake.script
                     case "Focal mechanism":
@@ -749,7 +776,7 @@ class MapPreview:
                 self.main_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
 
         self.process_thread = threading.Thread(target=thread_wrapper, name=name)
-        self.process_thread.daemon = True
+        self.process_thread.daemon = False
         self.process_thread.start()
 
     def gmt_execute(self, script_name, output_dir, main_queue, refresh):
@@ -899,6 +926,20 @@ class LayerParameters:
         __grd_data[10]: [__grd_codes[10]] + __res[4:],
         __grd_data[11]: [__grd_codes[11]] + __res[4:],
     }
+    gmt_elev_dict = {
+        __grd_data[0]: [__grd_codes[0]] + __res,
+        __grd_data[1]: [__grd_codes[1]] + __res,
+        __grd_data[2]: [__grd_codes[2]] + __res,
+    }
+    gmt_other_dict = {
+        __grd_data[3]: [__grd_codes[3]] + __res[4:],
+        __grd_data[6]: [__grd_codes[6]] + __res[5:],
+        __grd_data[7]: [__grd_codes[7]] + __res[5:],
+        __grd_data[8]: [__grd_codes[8]] + __res[6:],
+        __grd_data[9]: [__grd_codes[9]] + __res[4:],
+        __grd_data[10]: [__grd_codes[10]] + __res[4:],
+        __grd_data[11]: [__grd_codes[11]] + __res[4:],
+    }
 
     def tab_menu_layout_divider(self, tab: CTkFrame):
         """Configures the grid layout for a tab widget.
@@ -959,13 +1000,7 @@ class LayerParameters:
         r, g, b = self.any_to_r_g_b(var.get())
 
         color_code = AskColor(initial_color=self.rgb_to_hex(r, g, b))
-        # print(type(color_code))
-        # print(color_code)
 
-        # print("")
-        # print(f"hex code : {color_code.get()}")
-        # print(type(color_code.get()))
-        # print("")
         hex_code = f"{color_code.get()}"
         print(hex_code)
         if hex_code == "None":
@@ -1058,7 +1093,9 @@ class LayerParameters:
             print(f"Error: Invalid hexadecimal characters in '{hex_color}'.")
             return None
 
-    def parameter_color(self, frame: CTkFrame, row: int, var: StringVar):
+    def parameter_color(
+        self, frame: CTkFrame, row: int, var: StringVar, col_offset: int = 0
+    ):
 
         entry = CTkEntry(frame, textvariable=var)
         entry.bind(
@@ -1205,13 +1242,13 @@ class LayerParameters:
 
     def shading_azimuth_set(self, entry, label2, label3):
         if self.grdimg_shading.get() == "on":
-            entry.configure(state="normal", text_color="white")
-            label2.configure(state="normal")
-            label3.configure(state="normal")
+            entry.configure(state=NORMAL, text_color="white")
+            label2.configure(state=NORMAL)
+            label3.configure(state=NORMAL)
         else:
-            entry.configure(state="disabled", text_color="#565B5E")
-            label2.configure(state="disabled")
-            label3.configure(state="disabled")
+            entry.configure(state=DISABLED, text_color="#565B5E")
+            label2.configure(state=DISABLED)
+            label3.configure(state=DISABLED)
 
     def parameter_masking(self, opti, row):
         self.grdimg_masking = ctk.StringVar(opti, value="off")
@@ -1226,8 +1263,60 @@ class LayerParameters:
             onvalue="on",
             offvalue="off",
         )
-
         check.grid(row=row, column=0, columnspan=1, sticky="ew")
+
+    def parameter_contour_interval(self, opti, row, var: list[DoubleVar]):
+
+        entry = CTkEntry(opti, textvariable=var[0])
+
+        entry.bind("<FocusOut>", lambda event: self.annotation_updater(var))
+        entry.bind("<KeyRelease>", lambda event: self.annotation_updater(var))
+        entry.bind("<Return>", lambda event: self.annotation_updater(var))
+
+        entry.grid(row=row, column=0, sticky="ew", columnspan=2, padx=5)
+
+    def annotation_updater(self, var):
+        var[1].set(var[0].get() * 4)
+
+    def parameter_contour_index(self, opti, row, vars: list[StringVar]):
+        index = CTkCheckBox(
+            opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=vars[0],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue="on",
+            offvalue="off",
+        )
+
+        thicker = CTkCheckBox(
+            opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=vars[1],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue="on",
+            offvalue="off",
+        )
+        darker = CTkCheckBox(
+            opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=vars[2],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue="on",
+            offvalue="off",
+        )
+
+        index.grid(row=row, column=0)
+        thicker.grid(row=row + 1, column=0)
+        darker.grid(row=row + 1, column=4)
 
     def parameter_date(self, frame, row, var, start=False):
         date = datetime.now()
@@ -1406,42 +1495,57 @@ class GridImage(LayerParameters):
 
 class Contour(LayerParameters):
     def __init__(self, tab):
+        # grid data dan resolution
         # interval
-        # resolution
-        # warna index biasa
+        # warna & thickness
+        # annotation check box, option 4x5x6x
         # ketebalan kontur index biasa
-        self.color_minor = StringVar(tab, "lightgreen")
-        self.color_major = StringVar(tab, value="lightblue")
-        self.line_major = StringVar(tab, value="0.25p")
-        self.line_minor = StringVar(tab, value="0.25p")
+        self.color = StringVar(tab, "gray20")
+        self.thickness = StringVar(tab, "0.25p")
+
+        self.interval = [DoubleVar(tab, value=12.5), DoubleVar(tab, value=0.0)]
+        self.index = [
+            StringVar(tab, value="off"),
+            StringVar(tab, value="on"),
+            StringVar(tab, value="on"),
+        ]
+        # self.index_thicker = BooleanVar(tab, value=True)
+        # self.index_darker = BooleanVar(tab, value=True)
 
         labels = {
             "Grid data": "",
             "Grid resolution": "",
             "Contour Interval": "",
-            "Annotation interval": "",
-            "Contour Color": "",
-            "Contour Thickness": "",
+            "Color": "",
+            "Thickness": "",
+            "Annotation": "",
+            " ": "",
             # "Different Annotated Contour Line": "",
         }
         text, opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
         self.parameter_2dgridimage(opti, 1)
         self.parameter_grd_res(opti, 2)
-        self.parameter_color(opti, 3, self.color_major)
-        self.parameter_line_thickness(opti, 4, self.line_major)
-        self.parameter_color(opti, 5, self.color_minor)
-        self.parameter_line_thickness(opti, 6, self.line_minor)
+        self.parameter_contour_interval(opti, 3, self.interval)
+        self.parameter_color(opti, 4, self.color)
+        self.parameter_line_thickness(opti, 5, self.thickness)
+        self.parameter_contour_index(opti, 6, self.index)
+        # self.parameter_color(opti, 5, self.color_minor)
+        # self.parameter_line_thickness(opti, 6, self.line_minor)
 
-        self.script = StringVar()
-        self.script.set(self.call_script())
         # print(self.script.get())
 
-    def call_script(self):
-        script = f"gmt contour -G{self.color_land.get()} -S{self.color_sea.get()} -W{self.line_size.get()},{self.line_color.get()}"
-        self.script.set(script)
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
 
-        return script
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 class Earthquake(LayerParameters):
@@ -1500,6 +1604,18 @@ class Earthquake(LayerParameters):
 
         button.place(relx=0.57, rely=0.87)
 
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+
 
 class Focmec(LayerParameters):
     # tanggal awal
@@ -1507,24 +1623,63 @@ class Focmec(LayerParameters):
     # sumber katalog gcmt, user supplied
     # minmax magnitude
     # minmax depth
-    pass
+    def __init__(self, tab):
+        self.a = tab
+
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 class Tectonic(LayerParameters):
     # source
     # ketebalan garis
     # warna garis
-    pass
+    def __init__(self, tab):
+        self.a = tab
+
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 class Inset(LayerParameters):
     # lokasi
+    def __init__(self, tab):
+        self.a = tab
 
-    pass
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 class Legend(LayerParameters):
-    def __init__(self):
+    def __init__(self, tab):
+
         self.legend_eq = ctk.BooleanVar()
         self.legend_fm = ctk.BooleanVar()
         self.legend_date = ctk.BooleanVar()
@@ -1534,7 +1689,17 @@ class Legend(LayerParameters):
 
     # lokasi
     # radio button info apa aja yg masuk
-    pass
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 class Cosmetics(LayerParameters):
@@ -1550,6 +1715,18 @@ class Cosmetics(LayerParameters):
     def __init__(self, tab):
         self.north_arrow = StringVar(tab)
         self.scalebar = StringVar(tab)
+
+    @property
+    def script(self):
+        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        shade = ""
+        mask = ""
+        if self.grdimg_shading.get() == "on":
+            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
+        if self.grdimg_masking.get() == "on":
+            mask = "\ngmt coast -Slightblue"
+
+        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
 if __name__ == "__main__":
