@@ -62,7 +62,7 @@ class MainApp(ctk.CTk):
         super().__init__()
 
         self.title("gmt_pyplotter")
-        self.geometry("700x550+400+100")
+        self.geometry("700x550+100+100")
         self.minsize(700, 550)
         resize_image("map_simple_0.png")
         resize_image("map_relief_0.jpg")
@@ -354,58 +354,41 @@ class MapProjection(CTkFrame):
         self.main = main
         main.get_name
         self.place(relx=0.01, rely=0.69, relheight=0.29, relwidth=0.95)
-        self.projection_type = StringVar(self, value="Mercator")
-        label = CTkLabel(
+        self.projection_name = StringVar(self, value="Mercator")
+        self.projection_option = StringVar(self, value="width")
+        self.proj_width = StringVar(self, value="20")
+        self.proj_scale = StringVar(self, value="10000")
+        self.create_projection_menu()
+
+    def create_projection_menu(self):
+        label_main = CTkLabel(
             self,
             text="PROJECTION",
             font=("Helvetica", 14, "bold"),
         )
-        label.grid(column=0, row=0, columnspan=5)
+
         label_projection = CTkLabel(self, text="Projection :", anchor="e")
-        label_projection.grid(row=1, column=0, columnspan=1, pady=5)
         select_projection = CTkButton(
             self,
             width=70,
             text="Select projection",
-            textvariable=self.projection_type,
+            textvariable=self.projection_name,
             hover_color="gray",
             fg_color="dim gray",
         )
-        select_projection.grid(row=1, column=2, columnspan=1, pady=5, padx=10)
+
         CTkScrollableDropdown(
             select_projection,
             width=200,
             values=["Mercator", "Orthographic"],
         )
-        self.projection_option = StringVar(self, value="width")
-
-        def select_projection_option():
-            if self.projection_option.get() == "scale":
-                scale_entry.configure(state=NORMAL, text_color="white")
-                scale_unit.configure(text_color="white")
-                width_entry.configure(state=DISABLED, text_color="gray")
-                width_unit.configure(text_color="gray")
-                scale_radio.configure(text_color="white")
-                width_radio.configure(text_color="gray")
-
-            elif self.projection_option.get() == "width":
-                scale_entry.configure(state=DISABLED, text_color="gray")
-                scale_unit.configure(text_color="gray")
-                width_entry.configure(state=NORMAL, text_color="white")
-                width_unit.configure(text_color="white")
-                scale_radio.configure(text_color="gray")
-                width_radio.configure(text_color="white")
-            else:
-                scale_entry.configure(state=DISABLED, text_color="gray")
-                scale_unit.configure(text_color="gray")
-                width_entry.configure(state=DISABLED, text_color="gray")
-                width_unit.configure(text_color="gray")
-                scale_radio.configure(text_color="gray")
-                width_radio.configure(text_color="gray")
+        label_main.grid(column=0, row=0, columnspan=5)
+        label_projection.grid(row=1, column=0, columnspan=1, pady=5)
+        select_projection.grid(row=1, column=2, columnspan=1, pady=5, padx=10)
 
         row = 3
 
-        scale_radio = ctk.CTkRadioButton(
+        self.scale_radio = ctk.CTkRadioButton(
             self,
             width=7,
             variable=self.projection_option,
@@ -414,21 +397,21 @@ class MapProjection(CTkFrame):
             radiobutton_width=12,
             text_color_disabled="gray",
             text="Scale = 1 :",
-            command=select_projection_option,
+            command=self.select_projection_option,
         )
-        scale_entry = ctk.CTkEntry(
+        self.scale_entry = ctk.CTkEntry(
             self,
             width=70,
             textvariable=DoubleVar(value=10000),
             text_color="white",
         )
-        scale_unit = ctk.CTkLabel(self, text="cm", anchor="w")
-        scale_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
-        scale_entry.grid(row=row, column=2, columnspan=1, pady=5)
-        scale_unit.grid(row=row, column=5, pady=5)
+        self.scale_unit = ctk.CTkLabel(self, text="cm", anchor="w")
+        self.scale_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
+        self.scale_entry.grid(row=row, column=2, columnspan=1, pady=5)
+        self.scale_unit.grid(row=row, column=5, pady=5)
 
         row = 2
-        width_radio = ctk.CTkRadioButton(
+        self.width_radio = ctk.CTkRadioButton(
             self,
             width=7,
             variable=self.projection_option,
@@ -437,21 +420,48 @@ class MapProjection(CTkFrame):
             radiobutton_width=12,
             text_color_disabled="gray",
             text="Width =",
-            command=select_projection_option,
+            command=self.select_projection_option,
             # command=select_projection_option,
         )
-        width_entry = ctk.CTkEntry(
+        self.width_entry = ctk.CTkEntry(
             self,
             width=70,
             textvariable=DoubleVar(value=20),
             text_color="white",
         )
-        width_unit = ctk.CTkLabel(self, text="cm", anchor="w")
-        width_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
-        width_entry.grid(row=row, column=2, columnspan=1, pady=5)  # , padx=10)
-        width_unit.grid(row=row, column=5, pady=5)
+        self.width_unit = ctk.CTkLabel(self, text="cm", anchor="w")
+        self.width_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
+        self.width_entry.grid(row=row, column=2, columnspan=1, pady=5)  # , padx=10)
+        self.width_unit.grid(row=row, column=5, pady=5)
+        self.select_projection_option()
 
-        select_projection_option()
+    def select_projection_option(self):
+        if self.projection_option.get() == "scale":
+            self.scale_entry.configure(state=NORMAL, text_color="white")
+            self.scale_unit.configure(text_color="white")
+            self.width_entry.configure(state=DISABLED, text_color="gray")
+            self.width_unit.configure(text_color="gray")
+            self.scale_radio.configure(text_color="white")
+            self.width_radio.configure(text_color="gray")
+        elif self.projection_option.get() == "width":
+            self.scale_entry.configure(state=DISABLED, text_color="gray")
+            self.scale_unit.configure(text_color="gray")
+            self.width_entry.configure(state=NORMAL, text_color="white")
+            self.width_unit.configure(text_color="white")
+            self.scale_radio.configure(text_color="gray")
+            self.width_radio.configure(text_color="white")
+        else:
+            self.scale_entry.configure(state=DISABLED, text_color="gray")
+            self.scale_unit.configure(text_color="gray")
+            self.width_entry.configure(state=DISABLED, text_color="gray")
+            self.width_unit.configure(text_color="gray")
+            self.scale_radio.configure(text_color="gray")
+            self.width_radio.configure(text_color="gray")
+
+    @property
+    def map_scale_factor(self):
+        width = float(roi[1].get()) - float(roi[0].get())
+        return width * 111.11 / (int(self.proj_width.get()) * 0.0001)
 
 
 class LayerMenu(ctk.CTkFrame):
@@ -540,7 +550,7 @@ class LayerMenu(ctk.CTkFrame):
             case "Earth relief":
                 self.grdimage = GridImage(new_layer)
             case "Contour line":
-                self.contour = Contour(new_layer)
+                self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
                 self.earthquake = Earthquake(new_layer)
             case "Focal mechanism":
@@ -563,7 +573,7 @@ class MapPreview:
         self.button_ = button_frame
         self.main_queue = queue.Queue()
         self.map_preview_buttons()
-        self.get_window_offset()
+        # self.get_window_offset()
         self.main.after(100, self._check_queue)
 
     def map_preview_buttons(self):
@@ -672,20 +682,22 @@ class MapPreview:
         self.button_preview.configure(state=NORMAL)
         self.button_preview_refresh.configure(state=NORMAL)
 
-    def get_window_offset(self):
-        x_before = self.main.winfo_x()
-        y_before = self.main.winfo_y()
-        print(f"before =\n{x_before}\n{y_before}\n")
-
-        self.main.geometry(f"800x550")
-        x_after = self.main.winfo_x()
-        y_after = self.main.winfo_y()
-        self.main.geometry(f"700x550")
-        print(f"after =\n{x_after}\n{y_after}\n")
-        x_offset = x_after - x_before
-        y_offset = y_after - y_before
-        print(f"offset =\n{x_offset}\n{y_offset}\n")
-        return [x_offset, y_offset]
+    # def get_window_offset(self):
+    #     x_before = self.main.winfo_x()
+    #     y_before = self.main.winfo_y()
+    #     print(f"before =\n{x_before}\n{y_before}\n")
+    #     print(self.main.geometry())
+    #     self.main.geometry(f"800x550")
+    #     x_after = self.main.winfo_x()
+    #     y_after = self.main.winfo_y()
+    #     print(self.main.geometry())
+    #     self.main.geometry(f"700x550")
+    #     print(self.main.geometry())
+    #     print(f"after =\n{x_after}\n{y_after}\n")
+    #     x_offset = x_after - x_before
+    #     y_offset = y_after - y_before
+    #     print(f"offset =\n{x_offset}\n{y_offset}\n")
+    #     return [x_offset, y_offset]
 
     def map_preview_on(self, success_status, message=""):
         if not success_status:
@@ -700,7 +712,7 @@ class MapPreview:
 
         new_width = self.loading_image()
 
-        resize = f"{new_width}x550+{cur_x}+{cur_y-37}"
+        resize = f"{new_width}x550+{cur_x}+{cur_y}"
 
         self.main.geometry(resize)
 
@@ -725,7 +737,7 @@ class MapPreview:
         cur_y = self.main.winfo_y()
         print(cur_x)
         print(cur_y)
-        resize = f"700x550+{cur_x}+{cur_y-37}"
+        resize = f"700x550+{cur_x}+{cur_y}"
         self.main.geometry(resize)
         self.main.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
         self.main.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
@@ -895,6 +907,20 @@ class LayerParameters:
         "Earth Vertical Gravity Gradient Anomalies v32 [IGPP]",
         "Earth Free Air Gravity Anomalies v32 [IGPP]",
         "Earth Free Air Gravity Anomalies Errors v32 [IGPP]",
+    ]
+    __unit = [
+        "Meter",
+        "Meter",
+        "Meter",
+        "Myr",
+        "",
+        "",
+        "nTesla",
+        "nTesla",
+        "nTesla",
+        "Eotvos",
+        "mGal",
+        "mGal",
     ]
 
     __grd_codes = [
@@ -1265,58 +1291,107 @@ class LayerParameters:
         )
         check.grid(row=row, column=0, columnspan=1, sticky="ew")
 
-    def parameter_contour_interval(self, opti, row, var: list[DoubleVar]):
+    def parameter_contour_interval(self, opti, row, var: list[StringVar]):
 
-        entry = CTkEntry(opti, textvariable=var[0])
+        entry = CTkEntry(
+            opti,
+            textvariable=var[0],
+        )
 
-        entry.bind("<FocusOut>", lambda event: self.annotation_updater(var))
-        entry.bind("<KeyRelease>", lambda event: self.annotation_updater(var))
-        entry.bind("<Return>", lambda event: self.annotation_updater(var))
+        entry.bind(
+            "<FocusOut>", lambda event: self.interval_updater(opti, row, var, entry)
+        )
+        entry.bind(
+            "<KeyRelease>", lambda event: self.interval_updater(opti, row, var, entry)
+        )
+        entry.bind(
+            "<Return>", lambda event: self.interval_updater(opti, row, var, entry)
+        )
 
         entry.grid(row=row, column=0, sticky="ew", columnspan=2, padx=5)
+        self.index_options(opti, row, var)
 
-    def annotation_updater(self, var):
-        var[1].set(var[0].get() * 4)
+    def index_options(self, opti, row, var_interval: list[StringVar]):
+        contour_index_opt = [
+            float(var_interval[0].get()) * 4,
+            float(var_interval[0].get()) * 5,
+            float(var_interval[0].get()) * 6,
+        ]
+        index_interval = ctk.CTkOptionMenu(
+            opti,
+            variable=var_interval[1],
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            dynamic_resizing=False,
+        )
+        CTkScrollableDropdown(
+            index_interval,
+            values=contour_index_opt,
+            command=lambda e: var_interval[1].set(e),
+            width=130,
+            height=120,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+        index_interval.grid(row=row + 3, column=1, columnspan=3)
 
-    def parameter_contour_index(self, opti, row, vars: list[StringVar]):
+    def interval_updater(
+        self, opti, row, var_interval: list[StringVar], entry: CTkEntry
+    ):
+        try:
+            num = float(var_interval[0].get())
+            var_interval[1].set(str(num * 4))
+            self.index_options(opti, row, var_interval)
+            entry.configure(text_color="white")
+        except ValueError:
+            entry.configure(text_color="red")
+
+    def parameter_contour_index(self, opti, row, var_index: list[BooleanVar]):
+
         index = CTkCheckBox(
             opti,
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
             text="",
-            variable=vars[0],
+            variable=var_index[0],
             # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue="on",
-            offvalue="off",
+            onvalue=True,
+            offvalue=False,
         )
 
         thicker = CTkCheckBox(
             opti,
+            text="Thicker Index",
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
-            text="",
-            variable=vars[1],
+            variable=var_index[1],
             # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue="on",
-            offvalue="off",
+            onvalue=True,
+            offvalue=False,
         )
+
         darker = CTkCheckBox(
             opti,
+            text="Darker Index",
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
-            text="",
-            variable=vars[2],
+            variable=var_index[2],
             # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue="on",
-            offvalue="off",
+            onvalue=True,
+            offvalue=False,
         )
 
         index.grid(row=row, column=0)
-        thicker.grid(row=row + 1, column=0)
-        darker.grid(row=row + 1, column=4)
+
+        thicker.grid(row=row + 1, column=0, columnspan=3)
+
+        darker.grid(row=row + 1, column=3, columnspan=3)
 
     def parameter_date(self, frame, row, var, start=False):
         date = datetime.now()
@@ -1494,58 +1569,86 @@ class GridImage(LayerParameters):
 
 
 class Contour(LayerParameters):
-    def __init__(self, tab):
-        # grid data dan resolution
-        # interval
-        # warna & thickness
-        # annotation check box, option 4x5x6x
-        # ketebalan kontur index biasa
+    def __init__(self, main: MainApp, tab):
+
+        # test rekomendasi kontur berdasarkan potongan grdimage
+
+        self.main = main
+        map_scale_factor = self.main.get_projection.map_scale_factor
+        recomend = 100
+        intervals = [
+            (2778, 6.25, "01s"),
+            (27775, 12.5, "03s"),
+            (60000, 25, "15s"),
+            (110000, 50, "30s"),
+            (277750, 100, "30s"),
+            (555500, 125, "30s"),
+            (2777750, 250, "01m"),
+            (float("inf"), 500, "02m"),
+        ]
+
+        for threshold, recomend, resolution in intervals:
+            if map_scale_factor < threshold:
+                break
         self.color = StringVar(tab, "gray20")
         self.thickness = StringVar(tab, "0.25p")
 
-        self.interval = [DoubleVar(tab, value=12.5), DoubleVar(tab, value=0.0)]
-        self.index = [
-            StringVar(tab, value="off"),
-            StringVar(tab, value="on"),
-            StringVar(tab, value="on"),
+        self.interval = [
+            StringVar(tab, value=str(recomend)),
+            StringVar(tab, value=str(recomend * 4)),
         ]
-        # self.index_thicker = BooleanVar(tab, value=True)
-        # self.index_darker = BooleanVar(tab, value=True)
+        self.index = [
+            BooleanVar(tab, value=True),
+            BooleanVar(tab, value=True),
+            BooleanVar(tab, value=True),
+        ]
+        # index[0] = toggle the widget
+        # index[1] = toggle thicker index
+        # index[2] = toggle darker index
 
         labels = {
             "Grid data": "",
             "Grid resolution": "",
-            "Contour Interval": "",
+            "Contour interval": "",
             "Color": "",
             "Thickness": "",
-            "Annotation": "",
-            " ": "",
+            "Index contour": "",
             # "Different Annotated Contour Line": "",
         }
         text, opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
+        label = CTkLabel(text, text=" ")
+        label.grid(row=7, column=0)
         self.parameter_2dgridimage(opti, 1)
         self.parameter_grd_res(opti, 2)
         self.parameter_contour_interval(opti, 3, self.interval)
         self.parameter_color(opti, 4, self.color)
         self.parameter_line_thickness(opti, 5, self.thickness)
         self.parameter_contour_index(opti, 6, self.index)
-        # self.parameter_color(opti, 5, self.color_minor)
-        # self.parameter_line_thickness(opti, 6, self.line_minor)
-
-        # print(self.script.get())
 
     @property
     def script(self):
         remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
+        if self.index[1].get():
+            thickness_index = f"{float(self.thickness.get()[:-1])*2}p"
+        else:
+            thickness_index = self.thickness.get()
 
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        if self.index[2].get():
+            r, g, b = self.any_to_r_g_b(self.color.get())
+
+            color_index = f"{int(r)*0.8}/{int(g)*0.8}/{int(b)*0.8}"
+        else:
+            color_index = self.color.get()
+
+        if self.index[0].get():
+            interval = f"-A{self.interval[1].get()}+ap+uz -C{self.interval[0].get()}"
+            color = f"-Wa{thickness_index},{color_index} -Wc{self.thickness.get()},{self.color.get()}"
+        else:
+            interval = f"-C{self.interval[0].get()}"
+            color = f"-Wc{self.thickness.get(),{self.color.get()}}"
+
+        return f"gmt grdcontour {remote_data} {interval} {color} -LP "
 
 
 class Earthquake(LayerParameters):
