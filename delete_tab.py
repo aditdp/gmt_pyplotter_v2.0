@@ -15,11 +15,12 @@ from customtkinter import (
     DISABLED,
     NORMAL,
 )
-import ctypes, json, queue
+import ctypes, json, queue, sys
 from tkinter import messagebox, Canvas
 from _date_delay_entry import DateEntry
 
 # from CTkListbox import CTkListbox
+from pathlib import Path
 from PIL import Image, ImageTk
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -28,6 +29,7 @@ from ctk_coordinate_gui import CoordWindow
 from ctk_scrollable_dropdown import CTkScrollableDropdown
 from CTkColorPicker import *
 from ctk_rangeslider import CTkRangeSlider
+from utils import *
 
 if os.name == "nt":
     scalefactor = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
@@ -546,9 +548,9 @@ class LayerMenu(ctk.CTkFrame):
         # label.pack(side="right")
         match choice:
             case "Coastal line":
-                self.coast = Coast(new_layer)
+                self.coast = Coast(new_layer, self)
             case "Earth relief":
-                self.grdimage = GridImage(new_layer)
+                self.grdimage = GridImage(new_layer, self)
             case "Contour line":
                 self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
@@ -563,6 +565,42 @@ class LayerMenu(ctk.CTkFrame):
                 self.legend = Legend(new_layer)
             case "Cosmetics":
                 self.cosmetics = Cosmetics(new_layer)
+
+    def tab_menu_layout_divider(self, tab: CTkFrame):
+        """Configures the grid layout for a tab widget.
+
+        This function sets the column and row weights for a tab's grid layout,
+        ensuring consistent sizing and responsiveness.
+
+        Args:
+            tab: The tab widget to configure.
+        """
+        text = CTkFrame(tab)
+        text.place(x=0, y=0, relwidth=0.35, relheight=1)
+        opti = CTkFrame(tab)
+        opti.place(relx=0.35, y=0, relwidth=0.65, relheight=1)
+        text.columnconfigure(0, weight=1)
+        for i in range(10):
+            text.rowconfigure(i, weight=1)
+            opti.rowconfigure(i, weight=1)
+        for i in range(7):
+            opti.columnconfigure(i, weight=1, uniform="a")
+
+        return text, opti
+
+    def parameter_labels(self, label_frame: ctk.CTkFrame, labels_tips: dict[str, str]):
+        labels = list(labels_tips.keys())
+        tips = list(labels_tips.values())
+        widget_labels: dict[str, CTkLabel] = dict()
+
+        for i in range(len(labels_tips)):
+
+            widget_labels[str(i)] = CTkLabel(
+                label_frame, text=f"{labels[i]}  :", anchor="e"
+            )
+            # print(widget_labels[str(i)])
+            CTkToolTip(widget_labels[str(i)], message=tips[i])
+            widget_labels[str(i)].grid(row=i + 1, column=0, sticky="nsew", padx=10)
 
 
 class MapPreview:
@@ -857,10 +895,10 @@ class MapPreview:
                 self.map_preview_on(success_status, message)  # Call GUI update
             elif message_type == "REFRESHED":
                 self.refreshed()
-            elif message_type == "STATUS":  # For optional progress updates
-                self.main.status_label.configure(
-                    text=f"Status: {data[0]}"
-                )  # Assuming you have a status_label
+            # elif message_type == "STATUS":  # For optional progress updates
+            #     self.main.status_label.configure(
+            #         text=f"Status: {data[0]}"
+            # )  # Assuming you have a status_label
         except queue.Empty:
             pass  # No messages in queue
 
@@ -908,20 +946,20 @@ class LayerParameters:
         "Earth Free Air Gravity Anomalies v32 [IGPP]",
         "Earth Free Air Gravity Anomalies Errors v32 [IGPP]",
     ]
-    __unit = [
-        "Meter",
-        "Meter",
-        "Meter",
-        "Myr",
-        "",
-        "",
-        "nTesla",
-        "nTesla",
-        "nTesla",
-        "Eotvos",
-        "mGal",
-        "mGal",
-    ]
+    __unit = {
+        "@earth_relief_": "m",
+        "@earth_synbath_": "m",
+        "@earth_gebco_": "m",
+        "@earth_age_": "Myr",
+        "@earth_day_": "",
+        "@earth_night": "",
+        "@earth_mag_": "nTesla",
+        "@earth_mag4km_": "nTesla",
+        "@earth_wdmam_": "nTesla",
+        "@earth_vgg_": "Eotvos",
+        "@earth_faa_": "mGal",
+        "@earth_faaerror_": "mGal",
+    }
 
     __grd_codes = [
         "@earth_relief_",
@@ -966,192 +1004,6 @@ class LayerParameters:
         __grd_data[10]: [__grd_codes[10]] + __res[4:],
         __grd_data[11]: [__grd_codes[11]] + __res[4:],
     }
-
-    def tab_menu_layout_divider(self, tab: CTkFrame):
-        """Configures the grid layout for a tab widget.
-
-        This function sets the column and row weights for a tab's grid layout,
-        ensuring consistent sizing and responsiveness.
-
-        Args:
-            tab: The tab widget to configure.
-        """
-        text = CTkFrame(tab)
-        text.place(x=0, y=0, relwidth=0.35, relheight=1)
-        opti = CTkFrame(tab)
-        opti.place(relx=0.35, y=0, relwidth=0.65, relheight=1)
-        text.columnconfigure(0, weight=1)
-        for i in range(10):
-            text.rowconfigure(i, weight=1)
-            opti.rowconfigure(i, weight=1)
-        for i in range(7):
-            opti.columnconfigure(i, weight=1, uniform="a")
-
-        return text, opti
-
-    def parameter_labels(self, label_frame: ctk.CTkFrame, labels_tips: dict[str, str]):
-        labels = list(labels_tips.keys())
-        tips = list(labels_tips.values())
-        widget_labels: dict[str, CTkLabel] = dict()
-
-        for i in range(len(labels_tips)):
-
-            widget_labels[str(i)] = CTkLabel(
-                label_frame, text=f"{labels[i]}  :", anchor="e"
-            )
-            # print(widget_labels[str(i)])
-            CTkToolTip(widget_labels[str(i)], message=tips[i])
-            widget_labels[str(i)].grid(row=i + 1, column=0, sticky="nsew", padx=10)
-
-    def button_color_chooser(self, master, row, col, var, widget):
-        dark_picker_logo = Image.open("./image/dark_eyedropper.png")
-        light_picker_logo = Image.open("./image/light_eyedropper.png")
-        color_picker_logotk = CTkImage(
-            dark_image=dark_picker_logo, light_image=light_picker_logo, size=(20, 20)
-        )
-
-        select_color = ctk.CTkButton(
-            master,
-            image=color_picker_logotk,
-            text="",
-            command=lambda: self.color_chooser(var, widget),
-            width=30,
-            hover_color="gray",
-            fg_color="dim gray",
-        )
-        select_color.grid(row=row, column=col)
-        CTkToolTip(select_color, "Color picker")
-
-    def color_chooser(self, var: StringVar, widget):
-        r, g, b = self.any_to_r_g_b(var.get())
-
-        color_code = AskColor(initial_color=self.rgb_to_hex(r, g, b))
-
-        hex_code = f"{color_code.get()}"
-        print(hex_code)
-        if hex_code == "None":
-            return
-        else:
-            rgb_code = self.hex_to_rgb(hex_code)
-            print(rgb_code)
-            print(var)
-            print("belom ketangkep")
-            var.set(rgb_code)
-            self.color_preview_updater(var, widget=widget)
-            return rgb_code
-
-    def gmt_color_table(self, master, row, col, var):
-        self.button_color_table = CTkButton(
-            master,
-            text="Color Table",
-            command=lambda: self.color_table(var),
-            width=20,
-            hover_color="gray",
-        )
-        self.button_color_table.grid(row=row, column=col)
-
-    def label_color_preview(self, master, row, col, var):
-        self.label_preview = CTkLabel(master, height=20, fg_color=var.get(), text="")
-        self.label_preview.grid(column=col, row=row, sticky="ew", columnspan=1, padx=5)
-        self.color_preview_updater(var, self.label_preview)
-        return self.label_preview
-
-    def color_preview_updater(self, var_color, widget):
-
-        color_name = var_color.get()
-        print("update")
-        print(color_name)
-        r, g, b = self.any_to_r_g_b(color_name)
-        widget.configure(fg_color=self.rgb_to_hex(r, g, b))
-
-    def any_to_r_g_b(self, color_name: str):
-        from color_list import rgb_dict
-
-        if "/" in color_name:
-            print("split")
-            red, green, blue = color_name.split("/")
-            # label_preview
-        elif color_name.lower() in rgb_dict:
-            print("konversi dictionary")
-            rgb_code = rgb_dict[color_name.lower()]
-            red, green, blue = rgb_code.split("/")
-
-        else:
-            print("color name/code not match")
-            red, green, blue = "255", "255", "255"
-        return red, green, blue
-
-    def rgb_to_hex(self, r, g, b):
-        """translates an rgb tuple of int to a tkinter friendly color code"""
-        r = int(r)
-        g = int(g)
-        b = int(b)
-        return f"#{r:02x}{g:02x}{b:02x}"
-
-    # def hex_to_rgb(self, hex_color):
-    #     r = int(hex_color[1:3], 16)
-    #     g = int(hex_color[3:5], 16)
-    #     b = int(hex_color[5:7], 16)
-
-    #     return f"{r}/{g}/{b}"
-    def hex_to_rgb(self, hex_color):
-
-        # Remove the '#' prefix if it exists
-        if hex_color.startswith("#"):
-            hex_color = hex_color[1:]
-
-        # Check if the hex code has the correct length (6 characters for RRGGBB)
-        if len(hex_color) != 6:
-            print(
-                f"Error: Invalid hex color code length. Expected 6 characters,  got {len(hex_color)}."
-            )
-            return None
-
-        try:
-            # Convert each 2-character hex pair to an integer
-            r = int(hex_color[0:2], 16)
-            g = int(hex_color[2:4], 16)
-            b = int(hex_color[4:6], 16)
-
-            return f"{r}/{g}/{b}"
-        except ValueError:
-            # This error occurs if the hex_color string contains non-hex    characters
-            print(f"Error: Invalid hexadecimal characters in '{hex_color}'.")
-            return None
-
-    def parameter_color(
-        self, frame: CTkFrame, row: int, var: StringVar, col_offset: int = 0
-    ):
-
-        entry = CTkEntry(frame, textvariable=var)
-        entry.bind(
-            "<FocusOut>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
-        )
-        entry.bind(
-            "<KeyRelease>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
-        )
-        entry.bind(
-            "<Return>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
-        )
-        preview = self.label_color_preview(frame, row=row, col=3, var=var)
-        self.button_color_chooser(frame, row=row, col=4, var=var, widget=preview)
-
-        entry.grid(row=row, column=0, sticky="ew", columnspan=3, padx=5)
-
-    def parameter_line_thickness(self, frame, row, var):
-        # CTkSlider
-        pens = ["0p", "0.25p", "0.50p", "0.75p", "1p", "1.5p", "2p", "3p"]
-
-        entry = ctk.CTkComboBox(
-            frame,
-            variable=var,
-            values=pens,
-        )
-
-        entry.grid(row=row, column=0, columnspan=3, padx=5, sticky="ew")
 
     def parameter_2dgridimage(self, frame, row):
 
@@ -1495,10 +1347,179 @@ class LayerParameters:
         opti_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
 
 
-class Coast(LayerParameters):
-    def __init__(self, tab):
+class ColorOptions:
 
-        text, opti = self.tab_menu_layout_divider(tab)
+    def button_color_chooser(self, master, row, col, var, widget):
+        dark_picker_logo = Image.open("./image/dark_eyedropper.png")
+        light_picker_logo = Image.open("./image/light_eyedropper.png")
+        color_picker_logotk = CTkImage(
+            dark_image=dark_picker_logo, light_image=light_picker_logo, size=(20, 20)
+        )
+
+        select_color = ctk.CTkButton(
+            master,
+            image=color_picker_logotk,
+            text="",
+            command=lambda: self.color_chooser(var, widget),
+            width=30,
+            hover_color="gray",
+            fg_color="dim gray",
+        )
+        select_color.grid(row=row, column=col)
+        CTkToolTip(select_color, "Color picker")
+
+    def color_chooser(self, var: StringVar, widget):
+        rgb_code = ""
+        r, g, b = self.any_to_r_g_b(var.get())
+
+        color_code = AskColor(initial_color=self.rgb_to_hex(r, g, b))
+
+        hex_code = f"{color_code.get()}"
+        print(hex_code)
+        if hex_code == "None":
+            return
+        else:
+            rgb_code = self.hex_to_rgb(hex_code)
+            print(rgb_code)
+            print(var)
+            print("belom ketangkep")
+            var.set(rgb_code)
+            self.color_preview_updater(var, widget=widget)
+            return rgb_code
+
+    def gmt_color_table(self, frame, row, col):
+        self.button_color_table = CTkButton(
+            frame,
+            text="Color Table",
+            command=lambda: self.color_table(),
+            width=20,
+            hover_color="gray",
+        )
+        self.button_color_table.grid(row=row, column=col)
+
+    def color_table(self):
+        dir = Path(__file__).resolve().parent
+        rgb_chart = os.path.join(dir, "image", "GMT_RGBchart.png")
+        try:
+            if sys.platform == "win32":
+                # os.startfile is non-blocking on Windows
+                os.startfile(rgb_chart)
+            elif sys.platform == "darwin":  # macOS
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["open", rgb_chart])
+            else:  # Linux and other Unix-like systems
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["xdg-open", rgb_chart])
+        except (OSError, FileNotFoundError) as e:
+            messagebox.showerror(
+                "Error", f"Could not open file: {e}\nIs '{rgb_chart}' a valid path?"
+            )
+        except Exception as e:
+            # Catch any other unexpected errors
+            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+
+    def label_color_preview(self, master, row, col, var):
+        self.label_preview = CTkLabel(master, height=20, fg_color=var.get(), text="")
+        self.label_preview.grid(column=col, row=row, sticky="ew", columnspan=1, padx=5)
+        self.color_preview_updater(var, self.label_preview)
+        return self.label_preview
+
+    def color_preview_updater(self, var_color, widget):
+
+        color_name = var_color.get()
+        print("update")
+        print(color_name)
+        r, g, b = self.any_to_r_g_b(color_name)
+        widget.configure(fg_color=self.rgb_to_hex(r, g, b))
+
+    def any_to_r_g_b(self, color_name: str):
+        from color_list import rgb_dict
+
+        if "/" in color_name:
+            print("split")
+            red, green, blue = color_name.split("/")
+            # label_preview
+        elif color_name.lower() in rgb_dict:
+            print("konversi dictionary")
+            rgb_code = rgb_dict[color_name.lower()]
+            red, green, blue = rgb_code.split("/")
+
+        else:
+            print("color name/code not match")
+            red, green, blue = "255", "255", "255"
+        return red, green, blue
+
+    def rgb_to_hex(self, r, g, b):
+        """translates an rgb tuple of int to a tkinter friendly color code"""
+        r = int(r)
+        g = int(g)
+        b = int(b)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def hex_to_rgb(self, hex_color):
+
+        # Remove the '#' prefix if it exists
+        if hex_color.startswith("#"):
+            hex_color = hex_color[1:]
+
+        # Check if the hex code has the correct length (6 characters for RRGGBB)
+        if len(hex_color) != 6:
+            print(
+                f"Error: Invalid hex color code length. Expected 6 characters,  got {len(hex_color)}."
+            )
+            return ""
+
+        try:
+            # Convert each 2-character hex pair to an integer
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+
+            return f"{r}/{g}/{b}"
+        except ValueError:
+            # This error occurs if the hex_color string contains non-hex    characters
+            print(f"Error: Invalid hexadecimal characters in '{hex_color}'.")
+            return ""
+
+    def parameter_color(
+        self, frame: CTkFrame, row: int, var: StringVar, col_offset: int = 0
+    ):
+
+        entry = CTkEntry(frame, textvariable=var)
+        entry.bind(
+            "<FocusOut>",
+            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+        )
+        entry.bind(
+            "<KeyRelease>",
+            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+        )
+        entry.bind(
+            "<Return>",
+            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+        )
+        preview = self.label_color_preview(frame, row=row, col=3, var=var)
+        self.button_color_chooser(frame, row=row, col=4, var=var, widget=preview)
+
+        entry.grid(row=row, column=0, sticky="ew", columnspan=3, padx=5)
+
+    def parameter_line_thickness(self, frame, row, var):
+        # CTkSlider
+        pens = ["0p", "0.25p", "0.50p", "0.75p", "1p", "1.5p", "2p", "3p"]
+
+        entry = ctk.CTkComboBox(
+            frame,
+            variable=var,
+            values=pens,
+        )
+
+        entry.grid(row=row, column=0, columnspan=3, padx=5, sticky="ew")
+
+
+class Coast(ColorOptions):
+    def __init__(self, tab, menu: LayerMenu):
+        self.menu = menu
+        text, opti = self.menu.tab_menu_layout_divider(tab)
         self.color_land = StringVar(tab, "lightgreen")
         self.color_sea = StringVar(tab, value="lightblue")
         self.line_color = StringVar(tab, "black")
@@ -1509,12 +1530,13 @@ class Coast(LayerParameters):
             "Line color": "Line color of the coastal boundary",
             "Outline size": "Line thickness of the coastal boundary",
         }
-        self.parameter_labels(text, labels)
+        self.menu.parameter_labels(text, labels)
 
         self.parameter_color(opti, 1, self.color_land)
         self.parameter_color(opti, 2, self.color_sea)
         self.parameter_color(opti, 3, self.line_color)
         self.parameter_line_thickness(opti, 4, self.line_size)
+        self.gmt_color_table(text, row=7, col=0)
 
         # print(self.script.get())
 
@@ -1538,8 +1560,8 @@ class Coast(LayerParameters):
 
 
 class GridImage(LayerParameters):
-    def __init__(self, tab):
-
+    def __init__(self, tab, menu):
+        self.menu = menu
         labels = {
             "Grid data": "",
             "Grid resolution": "",
@@ -1547,8 +1569,8 @@ class GridImage(LayerParameters):
             "Grid Shading": "",
             "Sea Masking": "",
         }
-        text, opti = self.tab_menu_layout_divider(tab)
-        self.parameter_labels(text, labels)
+        text, opti = self.menu.tab_menu_layout_divider(tab)
+        self.menu.parameter_labels(text, labels)
         self.parameter_2dgridimage(opti, 1)
         self.parameter_grd_res(opti, 2)
         self.parameter_cpt(opti, 3)
@@ -1568,11 +1590,16 @@ class GridImage(LayerParameters):
         return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
-class Contour(LayerParameters):
+class Contour(ColorOptions, LayerParameters):
     def __init__(self, main: MainApp, tab):
 
         # test rekomendasi kontur berdasarkan potongan grdimage
+        # gmt grdinfo @earth_relief_01m -R106.4/106.7/-6.3/-6.1 -G -C -M
 
+        # max-min /10 = index interval
+        # index interval /4 or /5 for contour interval
+        # refresh recomendation contour interval
+        # set label satuan interval
         self.main = main
         map_scale_factor = self.main.get_projection.map_scale_factor
         recomend = 100
@@ -1615,8 +1642,22 @@ class Contour(LayerParameters):
             "Index contour": "",
             # "Different Annotated Contour Line": "",
         }
-        text, opti = self.tab_menu_layout_divider(tab)
-        self.parameter_labels(text, labels)
+        self.__unit = {
+            "@earth_relief_": "m",
+            "@earth_synbath_": "m",
+            "@earth_gebco_": "m",
+            "@earth_age_": "Myr",
+            "@earth_day_": "",
+            "@earth_night": "",
+            "@earth_mag_": "nTesla",
+            "@earth_mag4km_": "nTesla",
+            "@earth_wdmam_": "nTesla",
+            "@earth_vgg_": "Eotvos",
+            "@earth_faa_": "mGal",
+            "@earth_faaerror_": "mGal",
+        }
+        text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+        self.main.get_layers.parameter_labels(text, labels)
         label = CTkLabel(text, text=" ")
         label.grid(row=7, column=0)
         self.parameter_2dgridimage(opti, 1)
@@ -1642,7 +1683,10 @@ class Contour(LayerParameters):
             color_index = self.color.get()
 
         if self.index[0].get():
-            interval = f"-A{self.interval[1].get()}+ap+uz -C{self.interval[0].get()}"
+            unit = self.__unit[self.gmt_grd_dict[self.grdimg_resource.get()][0]]
+            interval = (
+                f"-A{self.interval[1].get()}+ap+u-{unit}+v -C{self.interval[0].get()}"
+            )
             color = f"-Wa{thickness_index},{color_index} -Wc{self.thickness.get()},{self.color.get()}"
         else:
             interval = f"-C{self.interval[0].get()}"
@@ -1834,7 +1878,3 @@ class Cosmetics(LayerParameters):
 
 if __name__ == "__main__":
     app = MainApp()
-"""
-buat programnya menghasilkan peta
-penambahan layer dan fitur nanti dulu
-"""

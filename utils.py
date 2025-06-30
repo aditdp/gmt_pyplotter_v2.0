@@ -1,9 +1,22 @@
-import os, shutil, sys, subprocess, time, cursor, csv, math, threading
+import os, subprocess, csv, math, threading
 from datetime import datetime, timedelta
 from dateutil import parser
-from functools import wraps
+
 from urllib.request import urlretrieve, urlopen
 from PIL import Image
+
+
+def file_writer(
+    flag: str,
+    script_name_format: str,
+    text: str,
+    output_dir: str,
+):
+
+    with open(
+        os.path.join(output_dir, script_name_format), flag, encoding="utf-8"
+    ) as file:
+        file.write(text)
 
 
 def is_file_empty(filepath, filename):
