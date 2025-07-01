@@ -36,7 +36,7 @@ def reorder_columns(input_file, output_file, new_order):
                 writer.writerow(reordered_row)
 
 
-def gcmt_downloader(fm_file, file_path, coord, date, mag, depth):
+def gcmt_downloader(fm_file, file_path, coord, date: list[datetime], mag, depth):
 
     url_gcmt = "https://www.globalcmt.org/cgi-bin/globalcmt-cgi-bin/CMT5/form?itype=ymd&yr={}&mo={}&day={}&otype=nd&nday={}&lmw={}&umw={}&llat={}&ulat={}&llon={}&ulon={}&lhd={}&uhd={}&list=6".format(
         date[0].strftime("%Y"),
@@ -124,7 +124,9 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 print(f"    Error processing row: {row}. Error: {e}")
 
 
-def usgs_downloader(eq_file: str, file_path: str, coord, date, mag, depth):
+def usgs_downloader(
+    eq_file: str, file_path: str, coord, date: list[datetime], mag, depth
+):
     url_usgs = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv"
     url_loc = f"minlongitude={coord[0]}&maxlongitude={coord[1]}&minlatitude={coord[2]}&maxlatitude={coord[3]}"
     url_date = f"starttime={date[0]}&endtime={date[1]}"
@@ -149,7 +151,7 @@ def usgs_downloader(eq_file: str, file_path: str, coord, date, mag, depth):
     return status
 
 
-def isc_downloader(eq_file, file_path, coord, date, mag, depth):
+def isc_downloader(eq_file, file_path, coord, date: list[datetime], mag, depth):
 
     url_isc = "https://www.isc.ac.uk/cgi-bin/web-db-run?request=COMPREHENSIVE&out_format=CATCSV&searchshape=RECT"
 

@@ -41,24 +41,6 @@ else:
     scalefactor = 1
 
 
-def resize_image(file):
-    try:
-        image_dir = "image"
-        path = os.path.dirname(os.path.abspath(__file__))
-        for i in range(1, 6):
-            filename = f"{file[:-5]}{i}{file[-4:]}"
-
-            if not os.path.exists(os.path.join(path, "image", filename)):
-                image = Image.open(os.path.join(path, image_dir, file))
-                w, h = image.size
-                new_w, new_h = w // (2**i), h // (2**i)
-                resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                resized.save(os.path.join(path, image_dir, filename), optimize=True)
-
-    except IOError:
-        messagebox.showerror("Error", f"Unable to open file '{file}', file not found")
-
-
 class MainApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -66,8 +48,8 @@ class MainApp(ctk.CTk):
         self.title("gmt_pyplotter")
         self.geometry("700x550+100+100")
         self.minsize(700, 550)
-        resize_image("map_simple_0.png")
-        resize_image("map_relief_0.jpg")
+        self.resize_image("map_simple_0.png")
+        self.resize_image("map_relief_0.jpg")
         output_dir = self.load_state()
 
         self.frame_map_param = CTkFrame(self, width=210, height=550)
@@ -87,6 +69,25 @@ class MainApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.closing)
         self.mainloop()
 
+    def resize_image(self, file):
+        try:
+            image_dir = "image"
+            path = Path(__file__).resolve().parent
+            for i in range(1, 6):
+                filename = f"{file[:-5]}{i}{file[-4:]}"
+
+                if not os.path.exists(os.path.join(path, "image", filename)):
+                    image = Image.open(os.path.join(path, image_dir, file))
+                    w, h = image.size
+                    new_w, new_h = w // (2**i), h // (2**i)
+                    resized = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    resized.save(os.path.join(path, image_dir, filename), optimize=True)
+
+        except IOError:
+            messagebox.showerror(
+                "Error", f"Unable to open file '{file}', file not found"
+            )
+
     def scalling(self):
         if self.orig == False:
             ctk.set_widget_scaling(1 / scalefactor)
@@ -98,7 +99,10 @@ class MainApp(ctk.CTk):
             self.orig = False
 
     def save_state(self):
-        state = {"output_dir": self.get_name.output_dir.get()}
+        state = {
+            "output_dir": self.get_name.output_dir.get(),
+            "roi": [x.get() for x in roi],
+        }
 
         with open("saved_param.json", "w") as f:
             json.dump(state, f)
@@ -256,16 +260,6 @@ class MapCoordinate(CTkFrame):
         super().__init__(mainframe)
         self.main = main
         self.place(relx=0.01, rely=0.27, relheight=0.40, relwidth=0.95)
-        self.coord_picked = False
-
-        def create_entry(text_var):
-            return CTkEntry(
-                self,
-                width=80,
-                font=("Consolas", 14),
-                textvariable=text_var,
-                state=DISABLED,
-            )
 
         for i in range(5):
             if i in [0, 3, 4]:
@@ -283,17 +277,12 @@ class MapCoordinate(CTkFrame):
         )
         label.grid(column=0, row=0, columnspan=5)
 
-        global roi
-        roi = [StringVar(self) for _ in range(4)]
-        roi[0].set("min lon")
-        roi[1].set("max lon")
-        roi[2].set("min lat")
-        roi[3].set("max lat")
+        self.generate_roi_variable()
 
-        self.x_min_entry = create_entry(roi[0])
-        self.x_max_entry = create_entry(roi[1])
-        self.y_min_entry = create_entry(roi[2])
-        self.y_max_entry = create_entry(roi[3])
+        self.x_min_entry = self.create_entry(roi[0])
+        self.x_max_entry = self.create_entry(roi[1])
+        self.y_min_entry = self.create_entry(roi[2])
+        self.y_max_entry = self.create_entry(roi[3])
         self.coord_button = CTkButton(
             self,
             text="Get Coordinate",
@@ -306,6 +295,31 @@ class MapCoordinate(CTkFrame):
         self.x_max_entry.grid(row=2, column=2, columnspan=2, pady=3, padx=10)
         self.y_min_entry.grid(row=3, column=1, columnspan=2, pady=3)
         self.coord_button.grid(row=4, column=0, columnspan=3, pady=3)
+
+    def generate_roi_variable(self):
+        global roi
+        roi = [StringVar(self) for _ in range(4)]
+
+        try:
+            with open("saved_param.json", "r") as f:
+                state = json.load(f)
+                saved_roi = state["roi"]
+                roi[0].set(saved_roi[0])
+                roi[1].set(saved_roi[1])
+                roi[2].set(saved_roi[2])
+                roi[3].set(saved_roi[3])
+                self.coord_picked = True
+        except KeyError:
+            roi[0].set("min lon")
+            roi[1].set("max lon")
+            roi[2].set("min lat")
+            roi[3].set("max lat")
+            self.coord_picked = False
+
+    def create_entry(self, text_var):
+        return CTkEntry(
+            self, width=80, font=("Consolas", 14), textvariable=text_var, state=DISABLED
+        )
 
     @property
     def coord(self):
@@ -554,7 +568,7 @@ class LayerMenu(ctk.CTkFrame):
             case "Contour line":
                 self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
-                self.earthquake = Earthquake(new_layer)
+                self.earthquake = Earthquake(new_layer, self.main)
             case "Focal mechanism":
                 self.focmec = Focmec(new_layer)
             case "Regional tectonics":
@@ -743,6 +757,7 @@ class MapPreview:
             messagebox.showerror("Map Error", message)  # Show error to user
             # Handle UI for failure (e.g., revert status, don't show map)
             self.preview_status = "off"
+            self.button_preview.configure(state=NORMAL)
             self.button_preview_refresh.pack_forget()
             return
         cur_x = self.main.winfo_x()
@@ -1240,7 +1255,8 @@ class GrdOptions:
     def parameter_grd_res(self, opti, row: int = 2):
 
         print(self.grdimg_resource.get())
-        self.res.set(self.dict[self.grdimg_resource.get()][3])
+        if self.res.get() not in self.dict[self.grdimg_resource.get()]:
+            self.res.set(self.dict[self.grdimg_resource.get()][1])
         print(f"self.res = {self.res.get()}")
 
         entry = ctk.CTkOptionMenu(
@@ -1534,6 +1550,7 @@ class Contour(ColorOptions, LayerParameters):
         self.main = main
         map_scale_factor = self.main.get_projection.map_scale_factor
         recomend = 100
+        resolution = "15s"
         intervals = [
             (2778, 6.25, "01s"),
             (27775, 12.5, "03s"),
@@ -1556,13 +1573,10 @@ class Contour(ColorOptions, LayerParameters):
             StringVar(tab, value=str(recomend * 4)),
         ]
         self.index = [
-            BooleanVar(tab, value=True),
-            BooleanVar(tab, value=True),
-            BooleanVar(tab, value=True),
+            BooleanVar(tab, value=True),  # toggle the index widget
+            BooleanVar(tab, value=True),  # toggle thicker index
+            BooleanVar(tab, value=True),  # toggle darker index
         ]
-        # index[0] = toggle the widget
-        # index[1] = toggle thicker index
-        # index[2] = toggle darker index
 
         labels = {
             "Grid data": "",
@@ -1579,15 +1593,19 @@ class Contour(ColorOptions, LayerParameters):
         label = CTkLabel(text, text=" ")
         label.grid(row=7, column=0)
         self.grd = StringVar()
-        self.res = StringVar()
+        self.res = StringVar(value=resolution)
         self.gmt_grd = GrdOptions(self.opti, self.grd, self.res, ctr=True)
         self.parameter_contour_interval()
         self.grd.trace_add("write", self.update_interval_unit)
+        for var in roi:
+            var.trace_add("write", self.update_interval_unit)
+
+        self.after_id = None
         self.parameter_color(self.opti, 4, self.color)
         self.parameter_line_thickness(self.opti, 5, self.thickness)
         self.parameter_contour_index()
-        self.contour_queue = queue.Queue()
-        self.main.after(100, self.estimate_interval)
+        # self.contour_queue = queue.Queue()
+        # self.main.after(100, self.estimate_interval)
 
     # def _check_queue(self):
     #     try:
@@ -1612,7 +1630,8 @@ class Contour(ColorOptions, LayerParameters):
             grdinfo = stdout.split("\t")
             min = float(grdinfo[5])
             max = float(grdinfo[6])
-            recomendation = max - min
+            raw_interval = int((max - min) / 40)
+            recomendation = self.round_value(raw_interval)
             if return_code == 0:
                 self.interval[0].set(str(recomendation))
                 self.interval_updater()
@@ -1621,10 +1640,33 @@ class Contour(ColorOptions, LayerParameters):
         except Exception as e:
             self.entry_interval.configure(state=NORMAL)
             print(e)
+            self.interval[0].set("0")
+            self.interval_updater()
+
+    def round_value(self, value):
+        if not isinstance(value, (int, float)):
+            print(f"Warning: Input '{value}' is not a number. Returning None.")
+            return None
+
+        if value < 10:
+            return round(value)
+        elif 10 <= value <= 50:
+            return round(value, 1)
+        elif 50 < value <= 100:
+            return round(value, -1)
+        elif 100 < value <= 1000:
+            return round(value, -2)
+        elif value > 1000:
+            return round(value, -3)
+        else:
+            return value
 
     def update_interval_unit(self, var, index, mode):
         self.label_unit.configure(text=self.gmt_grd.unit)
-        self.estimate_interval()
+        if self.after_id:
+            self.main.after_cancel(self.after_id)
+
+        self.after_id = self.main.after(500, self.estimate_interval)
 
     def parameter_contour_interval(self):
 
@@ -1750,13 +1792,14 @@ class Contour(ColorOptions, LayerParameters):
         return f"gmt grdcontour {remote_data} {interval} {color} -LP "
 
 
-class Earthquake(LayerParameters):
+class Earthquake(LayerMenu, LayerParameters):
     # tanggal awal
     # tanggal akhir
     # sumber katalog usgs, isc, user supplied
     # minmax magnitude rangeslider
     # minmax depth rangeslider
-    def __init__(self, tab):
+    def __init__(self, tab, main):
+        self.main = main
         self.date_start = StringVar(tab, "lightgreen")
         self.date_end = StringVar(tab, value="lightblue")
         self.eq_catalog = StringVar(tab, value="USGS")
@@ -1764,7 +1807,7 @@ class Earthquake(LayerParameters):
         self.mag_max = StringVar(tab, value="10")
         self.dep_min = StringVar(tab, value="0")
         self.dep_max = StringVar(tab, value="1000")
-
+        self.download_queue = queue.Queue()
         labels = {
             "Catalog": "",
             "Start date": "",
@@ -1782,18 +1825,32 @@ class Earthquake(LayerParameters):
         self.parameter_magnitude_range(opti, 4)
         self.parameter_depth_range(opti, 5)
         self.parameter_eq_size(opti, 6)
-        self.button_download(tab)
+        self.button_downloader(tab)
         self.button_show_catalog(tab)
+        self.main.after(100, self._check_queue)
 
-    def button_download(self, tab):
-        button = CTkButton(
+    def _check_queue(self):
+        try:
+            message_type, *data = self.download_queue.get_nowait()
+            if message_type == "COMPLETE":
+                success_status, message = data
+                self.download_button.configure(state=NORMAL)
+
+        except queue.Empty:
+            pass
+
+        self.main.after(100, self._check_queue)
+
+    def button_downloader(self, tab):
+        self.download_button = CTkButton(
             tab,
             text="Download",
             width=60,
             hover_color="gray",
             fg_color="dim gray",
+            command=lambda: self.download_catalog(),
         )
-        button.place(relx=0.4, rely=0.87)
+        self.download_button.place(relx=0.4, rely=0.87)
 
     def button_show_catalog(self, tab):
         button = CTkButton(
@@ -1806,17 +1863,42 @@ class Earthquake(LayerParameters):
 
         button.place(relx=0.57, rely=0.87)
 
+    def download_catalog(self):
+        print("download start")
+        self.download_button.configure(state=DISABLED)
+        server = {
+            "GlobalCMT": gcmt_downloader,
+            "ISC": isc_downloader,
+            "USGS": usgs_downloader,
+        }
+        args = (
+            self.main.get_name.file_name.get(),
+            self.main.get_name.output_dir.get(),
+            self.main.get_coordinate.coord,
+            [self.date_start, self.date_end],
+            [self.mag_min, self.mag_max],
+            [self.dep_min, self.dep_max],
+        )
+        self.threading_download(
+            server[self.catalog.get()], args, f"DL catalog {self.catalog.get()}"
+        )
+
+    def threading_download(self, worker, args, name):
+        def thread_wrapper():
+            try:
+                worker(*args, self.download_queue)
+            except Exception as e:
+                self.download_queue.put(
+                    ("COMPLETE", False, f"Worker thread error: {e}")
+                )
+
+        self.process_thread = threading.Thread(target=thread_wrapper, name=name)
+        self.process_thread.daemon = False
+        self.process_thread.start()
+
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 class Focmec(LayerParameters):
@@ -1830,15 +1912,7 @@ class Focmec(LayerParameters):
 
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 class Tectonic(LayerParameters):
@@ -1850,15 +1924,7 @@ class Tectonic(LayerParameters):
 
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 class Inset(LayerParameters):
@@ -1868,15 +1934,7 @@ class Inset(LayerParameters):
 
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 class Legend(LayerParameters):
@@ -1893,15 +1951,7 @@ class Legend(LayerParameters):
     # radio button info apa aja yg masuk
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 class Cosmetics(LayerParameters):
@@ -1920,15 +1970,7 @@ class Cosmetics(LayerParameters):
 
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
-        shade = ""
-        mask = ""
-        if self.grdimg_shading.get() == "on":
-            shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
-
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        pass
 
 
 if __name__ == "__main__":
