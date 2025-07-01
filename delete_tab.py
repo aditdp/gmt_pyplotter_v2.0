@@ -550,7 +550,7 @@ class LayerMenu(ctk.CTkFrame):
             case "Coastal line":
                 self.coast = Coast(new_layer, self)
             case "Earth relief":
-                self.grdimage = GridImage(new_layer, self)
+                self.grdimage = GrdImage(new_layer, self)
             case "Contour line":
                 self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
@@ -914,152 +914,6 @@ class MapPreview:
 
 
 class LayerParameters:
-    __res = [
-        "01s",
-        "03s",
-        "15s",
-        "30s",
-        "01m",
-        "02m",
-        "03m",
-        "04m",
-        "05m",
-        "06m",
-        "10m",
-        "15m",
-        "20m",
-        "30m",
-        "01d",
-    ]
-
-    __grd_data = [
-        "Earth Relief v2.6 [SRTM15]",
-        "Earth Relief v2.0 [SYNBATH]",
-        "Earth Relief 2024 [GEBCO]",
-        "Earth Seafloor Age [EarthByte]",
-        "Earth Day View [Blue Marble]",
-        "Earth Night View [Black Marble]",
-        "Earth Magnetic Anomalies at sea-level [EMAG2v3]",
-        "Earth Magnetic Anomalies at 4km altitude [EMAG2v3]",
-        "Earth Magnetic Anomalies v2.1 [WDMAM]",
-        "Earth Vertical Gravity Gradient Anomalies v32 [IGPP]",
-        "Earth Free Air Gravity Anomalies v32 [IGPP]",
-        "Earth Free Air Gravity Anomalies Errors v32 [IGPP]",
-    ]
-    __unit = {
-        "@earth_relief_": "m",
-        "@earth_synbath_": "m",
-        "@earth_gebco_": "m",
-        "@earth_age_": "Myr",
-        "@earth_day_": "",
-        "@earth_night": "",
-        "@earth_mag_": "nTesla",
-        "@earth_mag4km_": "nTesla",
-        "@earth_wdmam_": "nTesla",
-        "@earth_vgg_": "Eotvos",
-        "@earth_faa_": "mGal",
-        "@earth_faaerror_": "mGal",
-    }
-
-    __grd_codes = [
-        "@earth_relief_",
-        "@earth_synbath_",
-        "@earth_gebco_",
-        "@earth_age_",
-        "@earth_day_",
-        "@earth_night",
-        "@earth_mag_",
-        "@earth_mag4km_",
-        "@earth_wdmam_",
-        "@earth_vgg_",
-        "@earth_faa_",
-        "@earth_faaerror_",
-    ]
-
-    gmt_grd_dict = {
-        __grd_data[0]: [__grd_codes[0]] + __res,
-        __grd_data[1]: [__grd_codes[1]] + __res,
-        __grd_data[2]: [__grd_codes[2]] + __res,
-        __grd_data[3]: [__grd_codes[3]] + __res[4:],
-        __grd_data[4]: [__grd_codes[4]] + __res[3:],
-        __grd_data[5]: [__grd_codes[5]] + __res[3:],
-        __grd_data[6]: [__grd_codes[6]] + __res[5:],
-        __grd_data[7]: [__grd_codes[7]] + __res[5:],
-        __grd_data[8]: [__grd_codes[8]] + __res[6:],
-        __grd_data[9]: [__grd_codes[9]] + __res[4:],
-        __grd_data[10]: [__grd_codes[10]] + __res[4:],
-        __grd_data[11]: [__grd_codes[11]] + __res[4:],
-    }
-    gmt_elev_dict = {
-        __grd_data[0]: [__grd_codes[0]] + __res,
-        __grd_data[1]: [__grd_codes[1]] + __res,
-        __grd_data[2]: [__grd_codes[2]] + __res,
-    }
-    gmt_other_dict = {
-        __grd_data[3]: [__grd_codes[3]] + __res[4:],
-        __grd_data[6]: [__grd_codes[6]] + __res[5:],
-        __grd_data[7]: [__grd_codes[7]] + __res[5:],
-        __grd_data[8]: [__grd_codes[8]] + __res[6:],
-        __grd_data[9]: [__grd_codes[9]] + __res[4:],
-        __grd_data[10]: [__grd_codes[10]] + __res[4:],
-        __grd_data[11]: [__grd_codes[11]] + __res[4:],
-    }
-
-    def parameter_2dgridimage(self, frame, row):
-
-        self.grdimg_resource = StringVar(frame, value=next(iter(self.gmt_grd_dict)))
-
-        entry = ctk.CTkOptionMenu(
-            frame,
-            fg_color="#565B5E",
-            button_color="#565B5E",
-            button_hover_color="#7A848D",
-            variable=self.grdimg_resource,
-            dynamic_resizing=False,
-        )
-        CTkScrollableDropdown(
-            entry,
-            values=self.gmt_grd_dict.keys(),
-            command=lambda e: self.setvariable(frame, e),
-            width=400,
-            height=300,
-            justify="left",
-            resize=False,
-        )
-
-        entry.grid(row=row, column=0, columnspan=6, sticky="ew")
-
-    def setvariable(self, opti, a):
-        self.grdimg_resource.set(a)
-        self.parameter_grd_res(opti, 2)
-
-    def parameter_grd_res(self, opti, row):
-
-        print(self.grdimg_resource.get())
-        self.grdimg_resolution = StringVar(
-            opti, value=self.gmt_grd_dict[self.grdimg_resource.get()][3]
-        )
-
-        entry = ctk.CTkOptionMenu(
-            opti,
-            variable=self.grdimg_resolution,
-            fg_color="#565B5E",
-            button_color="#565B5E",
-            button_hover_color="#7A848D",
-            dynamic_resizing=False,
-        )
-        CTkScrollableDropdown(
-            entry,
-            values=self.gmt_grd_dict[self.grdimg_resource.get()][1:],
-            command=lambda e: self.grdimg_resolution.set(e),
-            width=100,
-            height=300,
-            justify="left",
-            resize=False,
-            autocomplete=True,
-        )
-
-        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
 
     def parameter_cpt(self, opti, row):
         from color_list import palette_name
@@ -1142,108 +996,6 @@ class LayerParameters:
             offvalue="off",
         )
         check.grid(row=row, column=0, columnspan=1, sticky="ew")
-
-    def parameter_contour_interval(self, opti, row, var: list[StringVar]):
-
-        entry = CTkEntry(
-            opti,
-            textvariable=var[0],
-        )
-
-        entry.bind(
-            "<FocusOut>", lambda event: self.interval_updater(opti, row, var, entry)
-        )
-        entry.bind(
-            "<KeyRelease>", lambda event: self.interval_updater(opti, row, var, entry)
-        )
-        entry.bind(
-            "<Return>", lambda event: self.interval_updater(opti, row, var, entry)
-        )
-
-        entry.grid(row=row, column=0, sticky="ew", columnspan=2, padx=5)
-        self.index_options(opti, row, var)
-
-    def index_options(self, opti, row, var_interval: list[StringVar]):
-        contour_index_opt = [
-            float(var_interval[0].get()) * 4,
-            float(var_interval[0].get()) * 5,
-            float(var_interval[0].get()) * 6,
-        ]
-        index_interval = ctk.CTkOptionMenu(
-            opti,
-            variable=var_interval[1],
-            fg_color="#565B5E",
-            button_color="#565B5E",
-            button_hover_color="#7A848D",
-            dynamic_resizing=False,
-        )
-        CTkScrollableDropdown(
-            index_interval,
-            values=contour_index_opt,
-            command=lambda e: var_interval[1].set(e),
-            width=130,
-            height=120,
-            justify="left",
-            resize=False,
-            autocomplete=True,
-            scrollbar=False,
-        )
-        index_interval.grid(row=row + 3, column=1, columnspan=3)
-
-    def interval_updater(
-        self, opti, row, var_interval: list[StringVar], entry: CTkEntry
-    ):
-        try:
-            num = float(var_interval[0].get())
-            var_interval[1].set(str(num * 4))
-            self.index_options(opti, row, var_interval)
-            entry.configure(text_color="white")
-        except ValueError:
-            entry.configure(text_color="red")
-
-    def parameter_contour_index(self, opti, row, var_index: list[BooleanVar]):
-
-        index = CTkCheckBox(
-            opti,
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            text="",
-            variable=var_index[0],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue=True,
-            offvalue=False,
-        )
-
-        thicker = CTkCheckBox(
-            opti,
-            text="Thicker Index",
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            variable=var_index[1],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue=True,
-            offvalue=False,
-        )
-
-        darker = CTkCheckBox(
-            opti,
-            text="Darker Index",
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            variable=var_index[2],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue=True,
-            offvalue=False,
-        )
-
-        index.grid(row=row, column=0)
-
-        thicker.grid(row=row + 1, column=0, columnspan=3)
-
-        darker.grid(row=row + 1, column=3, columnspan=3)
 
     def parameter_date(self, frame, row, var, start=False):
         date = datetime.now()
@@ -1345,6 +1097,176 @@ class LayerParameters:
         text_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
         opti_padding = CTkLabel(opti, text="", fg_color="red")
         opti_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
+
+
+class GrdOptions:
+    __res = [
+        "01s",
+        "03s",
+        "15s",
+        "30s",
+        "01m",
+        "02m",
+        "03m",
+        "04m",
+        "05m",
+        "06m",
+        "10m",
+        "15m",
+        "20m",
+        "30m",
+        "01d",
+    ]
+
+    __grd_fullname = [
+        "Earth Relief v2.6 [SRTM15]",
+        "Earth Relief v2.0 [SYNBATH]",
+        "Earth Relief 2024 [GEBCO]",
+        "Earth Seafloor Age [EarthByte]",
+        "Earth Day View [Blue Marble]",
+        "Earth Night View [Black Marble]",
+        "Earth Magnetic Anomalies at sea-level [EMAG2v3]",
+        "Earth Magnetic Anomalies at 4km altitude [EMAG2v3]",
+        "Earth Magnetic Anomalies v2.1 [WDMAM]",
+        "Earth Vertical Gravity Gradient Anomalies v32 [IGPP]",
+        "Earth Free Air Gravity Anomalies v32 [IGPP]",
+        "Earth Free Air Gravity Anomalies Errors v32 [IGPP]",
+    ]
+
+    __unit = {
+        "@earth_relief_": "m",
+        "@earth_synbath_": "m",
+        "@earth_gebco_": "m",
+        "@earth_age_": "Myr",
+        "@earth_day_": "",
+        "@earth_night": "",
+        "@earth_mag_": "nTesla",
+        "@earth_mag4km_": "nTesla",
+        "@earth_wdmam_": "nTesla",
+        "@earth_vgg_": "Eotvos",
+        "@earth_faa_": "mGal",
+        "@earth_faaerror_": "mGal",
+    }
+
+    __grd_codes = [
+        "@earth_relief_",
+        "@earth_synbath_",
+        "@earth_gebco_",
+        "@earth_age_",
+        "@earth_day_",
+        "@earth_night",
+        "@earth_mag_",
+        "@earth_mag4km_",
+        "@earth_wdmam_",
+        "@earth_vgg_",
+        "@earth_faa_",
+        "@earth_faaerror_",
+    ]
+
+    gmt_grd_dict = {
+        __grd_fullname[0]: [__grd_codes[0]] + __res,
+        __grd_fullname[1]: [__grd_codes[1]] + __res,
+        __grd_fullname[2]: [__grd_codes[2]] + __res,
+        __grd_fullname[3]: [__grd_codes[3]] + __res[4:],
+        __grd_fullname[4]: [__grd_codes[4]] + __res[3:],
+        __grd_fullname[5]: [__grd_codes[5]] + __res[3:],
+        __grd_fullname[6]: [__grd_codes[6]] + __res[5:],
+        __grd_fullname[7]: [__grd_codes[7]] + __res[5:],
+        __grd_fullname[8]: [__grd_codes[8]] + __res[6:],
+        __grd_fullname[9]: [__grd_codes[9]] + __res[4:],
+        __grd_fullname[10]: [__grd_codes[10]] + __res[4:],
+        __grd_fullname[11]: [__grd_codes[11]] + __res[4:],
+    }
+    gmt_ctr_dict = {
+        __grd_fullname[0]: [__grd_codes[0]] + __res,
+        __grd_fullname[1]: [__grd_codes[1]] + __res,
+        __grd_fullname[2]: [__grd_codes[2]] + __res,
+        __grd_fullname[3]: [__grd_codes[3]] + __res[4:],
+        __grd_fullname[6]: [__grd_codes[6]] + __res[5:],
+        __grd_fullname[7]: [__grd_codes[7]] + __res[5:],
+        __grd_fullname[8]: [__grd_codes[8]] + __res[6:],
+        __grd_fullname[9]: [__grd_codes[9]] + __res[4:],
+        __grd_fullname[10]: [__grd_codes[10]] + __res[4:],
+        __grd_fullname[11]: [__grd_codes[11]] + __res[4:],
+    }
+
+    def __init__(
+        self,
+        frame: CTkFrame,
+        var_grd: StringVar,
+        var_res: StringVar,
+        row: int = 1,
+        ctr=False,
+    ):
+
+        self.grd = var_grd
+        self.grd.set("@earth_relief_")
+        self.res = var_res
+        self.dict = self.gmt_grd_dict
+        if ctr == True:
+            self.dict = self.gmt_ctr_dict
+        self.parameter_grd_name(frame, row)
+        self.parameter_grd_res(frame, row + 1)
+
+    def parameter_grd_name(self, frame, row):
+
+        self.grdimg_resource = StringVar(frame, value=next(iter(self.dict)))
+
+        entry = ctk.CTkOptionMenu(
+            frame,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            variable=self.grdimg_resource,
+            dynamic_resizing=False,
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=self.dict.keys(),
+            command=lambda e: self.setvariable(frame, row, e),
+            width=400,
+            height=300,
+            justify="left",
+            resize=False,
+        )
+
+        entry.grid(row=row, column=0, columnspan=6, sticky="ew")
+
+    def setvariable(self, opti, row, e):
+        self.grdimg_resource.set(e)
+        self.grd.set(self.dict[self.grdimg_resource.get()][0])
+        self.parameter_grd_res(opti, row + 1)
+
+    def parameter_grd_res(self, opti, row: int = 2):
+
+        print(self.grdimg_resource.get())
+        self.res.set(self.dict[self.grdimg_resource.get()][3])
+        print(f"self.res = {self.res.get()}")
+
+        entry = ctk.CTkOptionMenu(
+            opti,
+            variable=self.res,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            dynamic_resizing=False,
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=self.dict[self.grdimg_resource.get()][1:],
+            command=lambda e: self.res.set(e),
+            width=100,
+            height=300,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+        )
+
+        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
+
+    @property
+    def unit(self):
+        return self.__unit[self.grd.get()]
 
 
 class ColorOptions:
@@ -1559,7 +1481,7 @@ class Coast(ColorOptions):
         return script
 
 
-class GridImage(LayerParameters):
+class GrdImage(LayerParameters):
     def __init__(self, tab, menu):
         self.menu = menu
         labels = {
@@ -1571,15 +1493,24 @@ class GridImage(LayerParameters):
         }
         text, opti = self.menu.tab_menu_layout_divider(tab)
         self.menu.parameter_labels(text, labels)
-        self.parameter_2dgridimage(opti, 1)
-        self.parameter_grd_res(opti, 2)
+        self.grd = StringVar()
+        self.res = StringVar()
+        self.gmt_grd = GrdOptions(opti, self.grd, self.res)
         self.parameter_cpt(opti, 3)
         self.parameter_shading(opti, 4)
         self.parameter_masking(opti, 5)
 
+    @staticmethod
+    def abc(row: int, col: int):
+        GrdImage.cde(row, col)
+
+    @staticmethod
+    def cde(row, col):
+        print(row + col)
+
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        remote_data = f"{self.grd.get()}{self.res.get()}"
         shade = ""
         mask = ""
         if self.grdimg_shading.get() == "on":
@@ -1642,34 +1573,158 @@ class Contour(ColorOptions, LayerParameters):
             "Index contour": "",
             # "Different Annotated Contour Line": "",
         }
-        self.__unit = {
-            "@earth_relief_": "m",
-            "@earth_synbath_": "m",
-            "@earth_gebco_": "m",
-            "@earth_age_": "Myr",
-            "@earth_day_": "",
-            "@earth_night": "",
-            "@earth_mag_": "nTesla",
-            "@earth_mag4km_": "nTesla",
-            "@earth_wdmam_": "nTesla",
-            "@earth_vgg_": "Eotvos",
-            "@earth_faa_": "mGal",
-            "@earth_faaerror_": "mGal",
-        }
-        text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+
+        text, self.opti = self.main.get_layers.tab_menu_layout_divider(tab)
         self.main.get_layers.parameter_labels(text, labels)
         label = CTkLabel(text, text=" ")
         label.grid(row=7, column=0)
-        self.parameter_2dgridimage(opti, 1)
-        self.parameter_grd_res(opti, 2)
-        self.parameter_contour_interval(opti, 3, self.interval)
-        self.parameter_color(opti, 4, self.color)
-        self.parameter_line_thickness(opti, 5, self.thickness)
-        self.parameter_contour_index(opti, 6, self.index)
+        self.grd = StringVar()
+        self.res = StringVar()
+        self.gmt_grd = GrdOptions(self.opti, self.grd, self.res, ctr=True)
+        self.parameter_contour_interval()
+        self.grd.trace_add("write", self.update_interval_unit)
+        self.parameter_color(self.opti, 4, self.color)
+        self.parameter_line_thickness(self.opti, 5, self.thickness)
+        self.parameter_contour_index()
+        self.contour_queue = queue.Queue()
+        self.main.after(100, self.estimate_interval)
+
+    # def _check_queue(self):
+    #     try:
+    #         message_type, *data=self.contour_queue.get_nowait()
+    #         if message_type =="COMPLETE":
+    #             pass
+    #     except Exception as e:
+    #         print(e)
+    def estimate_interval(self):
+        command = f"gmt grdinfo {self.grd.get()}{self.res.get()} {self.main.get_coordinate.coord_r} -G -C -M"
+        self.entry_interval.configure(state=DISABLED)
+        try:
+            est_interval = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, stderr = est_interval.communicate()
+            return_code = est_interval.returncode
+            grdinfo = stdout.split("\t")
+            min = float(grdinfo[5])
+            max = float(grdinfo[6])
+            recomendation = max - min
+            if return_code == 0:
+                self.interval[0].set(str(recomendation))
+                self.interval_updater()
+
+            self.entry_interval.configure(state=NORMAL)
+        except Exception as e:
+            self.entry_interval.configure(state=NORMAL)
+            print(e)
+
+    def update_interval_unit(self, var, index, mode):
+        self.label_unit.configure(text=self.gmt_grd.unit)
+        self.estimate_interval()
+
+    def parameter_contour_interval(self):
+
+        self.entry_interval = CTkEntry(
+            self.opti,
+            textvariable=self.interval[0],
+        )
+
+        self.entry_interval.bind("<FocusOut>", lambda event: self.interval_updater())
+        self.entry_interval.bind("<KeyRelease>", lambda event: self.interval_updater())
+        self.entry_interval.bind("<Return>", lambda event: self.interval_updater())
+
+        self.label_unit = CTkLabel(self.opti, text=self.gmt_grd.unit)
+        self.label_unit.grid(row=3, column=2, sticky="w", padx=[0, 5])
+        self.entry_interval.grid(row=3, column=0, sticky="ew", columnspan=2, padx=5)
+        self.index_options()
+
+    def index_options(self):
+        contour_index_opt = [
+            float(self.interval[0].get()) * 4,
+            float(self.interval[0].get()) * 5,
+            float(self.interval[0].get()) * 6,
+        ]
+        index_interval = ctk.CTkOptionMenu(
+            self.opti,
+            variable=self.interval[1],
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            dynamic_resizing=False,
+        )
+        CTkScrollableDropdown(
+            index_interval,
+            values=contour_index_opt,
+            command=lambda e: self.interval[1].set(e),
+            width=130,
+            height=120,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+        index_interval.grid(row=6, column=1, columnspan=3)
+
+    def interval_updater(self):
+        try:
+            num = float(self.interval[0].get())
+            self.interval[1].set(str(num * 4))
+            self.index_options()
+            self.entry_interval.configure(text_color="white")
+        except ValueError:
+            self.entry_interval.configure(text_color="red")
+
+    def parameter_contour_index(self):
+
+        index = CTkCheckBox(
+            self.opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=self.index[0],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue=True,
+            offvalue=False,
+        )
+
+        thicker = CTkCheckBox(
+            self.opti,
+            text="Thicker Index",
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            variable=self.index[1],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue=True,
+            offvalue=False,
+        )
+
+        darker = CTkCheckBox(
+            self.opti,
+            text="Darker Index",
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            variable=self.index[2],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue=True,
+            offvalue=False,
+        )
+
+        index.grid(row=6, column=0)
+
+        thicker.grid(row=7, column=0, columnspan=3)
+
+        darker.grid(row=7, column=3, columnspan=3)
 
     @property
     def script(self):
-        remote_data = f"{self.gmt_grd_dict[self.grdimg_resource.get()][0]}{self.grdimg_resolution.get()}"
+        remote_data = f"{self.grd.get()}{self.res.get()}"
         if self.index[1].get():
             thickness_index = f"{float(self.thickness.get()[:-1])*2}p"
         else:
@@ -1678,14 +1733,14 @@ class Contour(ColorOptions, LayerParameters):
         if self.index[2].get():
             r, g, b = self.any_to_r_g_b(self.color.get())
 
-            color_index = f"{int(r)*0.8}/{int(g)*0.8}/{int(b)*0.8}"
+            color_index = f"{int(int(r)*0.8)}/{int(int(g)*0.8)}/{int(int(b)*0.8)}"
         else:
             color_index = self.color.get()
 
         if self.index[0].get():
-            unit = self.__unit[self.gmt_grd_dict[self.grdimg_resource.get()][0]]
+            unit = self.gmt_grd.unit
             interval = (
-                f"-A{self.interval[1].get()}+ap+u-{unit}+v -C{self.interval[0].get()}"
+                f"-A{self.interval[1].get()}+ap+u-{unit} -C{self.interval[0].get()}"
             )
             color = f"-Wa{thickness_index},{color_index} -Wc{self.thickness.get()},{self.color.get()}"
         else:
