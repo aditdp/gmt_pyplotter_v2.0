@@ -16,8 +16,9 @@ from customtkinter import (
     NORMAL,
 )
 import ctypes, json, queue, sys
-from tkinter import messagebox, Canvas
+from tkinter import messagebox, Canvas, TclError
 from _date_delay_entry import DateEntry
+from functools import wraps
 
 # from CTkListbox import CTkListbox
 from pathlib import Path
@@ -39,6 +40,17 @@ if os.name == "nt":
 
 else:
     scalefactor = 1
+
+
+# def run_in_thread(func):
+#     @wraps(func)
+#     def wrapper(*args, **kwargs):
+#         thread = threading.Thread(target=func, args=args, kwargs=kwargs)
+#         thread.daemon = True
+#         thread.start()
+#         return thread
+
+#     return wrapper
 
 
 class MainApp(ctk.CTk):
@@ -340,7 +352,8 @@ class MapCoordinate(CTkFrame):
         """returning the coordinate boundaries in gmt format:
         -Rmin longitude/max longitude/min latitude/max latitude
         """
-        return f"-R{roi[0].get()}/{roi[1].get()}/{roi[2].get()}/{roi[3].get()}"
+        coord_r = f"-R{roi[0].get()}/{roi[1].get()}/{roi[2].get()}/{roi[3].get()}"
+        return coord_r
 
     def update_coor_entry(self):
         self.coord_button.configure(state=DISABLED)
@@ -499,7 +512,7 @@ class LayerMenu(ctk.CTkFrame):
         )
         self.layer_control.pack(expand=1, fill="both")
 
-        self.layers = {}
+        self.layers = []
         self.add_remove_layer()
         MapPreview(self.main, self.button_frame)
 
@@ -542,20 +555,58 @@ class LayerMenu(ctk.CTkFrame):
 
     def delete_tab(self):
         active_tab = self.layer_control.get()
-        deleting_layer = messagebox.askyesno(
+        delete_layer = messagebox.askyesno(
             message=f"Delete layer: '{active_tab}' ?",
             title="Deleting layer..",
         )
-        if active_tab in self.layers and deleting_layer == True:
-            self.layers.pop(active_tab)
-            self.layer_control.delete(active_tab)
+        print("cek dulu isi active tab dan self.layers")
+        print(active_tab)
+        print(self.layers)
+        if delete_layer == False:
+            print("gajadi delete")
+            return
+
+        self.layers.remove(active_tab)
+        match active_tab:
+            case "Coastal line":
+                if hasattr(self, "coast") and self.coast is not None:
+                    del self.coast
+            case "Earth relief":
+                if hasattr(self, "grdimage") and self.grdimage is not None:
+                    del self.grdimage
+            case "Contour line":
+                print("deleting contour instance")
+                # if hasattr(self, "contour") and self.contour is not None:
+                if self.contour.after_id:
+                    self.main.after_cancel(self.contour.after_id)
+                self.contour.remove_traces()
+                del self.contour
+                print("contour deleted")
+            case "Earthquake plot":
+                if hasattr(self, "earthquake") and self.earthquake is not None:
+                    del self.earthquake
+            case "Focal mechanism":
+                if hasattr(self, "focmec") and self.focmec is not None:
+                    del self.focmec
+            case "Regional tectonics":
+                if hasattr(self, "tectonics") and self.tectonics is not None:
+                    del self.tectonics
+            case "Map inset":
+                if hasattr(self, "inset") and self.inset is not None:
+                    del self.inset
+            case "Legend":
+                if hasattr(self, "legend") and self.legend is not None:
+                    del self.legend
+            case "Cosmetics":
+                if hasattr(self, "cosmetics") and self.cosmetics is not None:
+                    del self.cosmetics
+        self.layer_control.delete(active_tab)
 
     def add_tab(self, choice):
         # tab_name = f"{len(self.tabs)+1}. {choice}"
         layer = choice
         new_layer = self.layer_control.add(layer)
-        self.script = StringVar()
-        self.layers[layer] = self.script
+        self.layers.append(layer)
 
         self.layer_control.set(layer)
         # label = ctk.CTkLabel(new_tab, text=choice, bg_color="red")
@@ -623,7 +674,7 @@ class MapPreview:
         self.main = main
         self.preview_status = "off"
         self.button_ = button_frame
-        self.main_queue = queue.Queue()
+        self.preview_queue = queue.Queue()
         self.map_preview_buttons()
         # self.get_window_offset()
         self.main.after(100, self._check_queue)
@@ -667,11 +718,56 @@ class MapPreview:
                 name="generate Preview Map",
             )
 
-            self.preview_status = "on"
         else:
             self.map_preview_off()
             self.preview_status = "off"
             self.button_preview_refresh.pack_forget()
+
+    def map_preview_on(self, success_status, message=""):
+        if not success_status:
+            print(f"Map generation failed: {message}")
+            messagebox.showerror("Map Error", message)  # Show error to user
+            # Handle UI for failure (e.g., revert status, don't show map)
+            self.preview_status = "off"
+            self.button_preview.configure(state=NORMAL)
+            self.button_preview_refresh.pack_forget()
+            return
+        print(message)
+        self.preview_status = "on"
+        cur_x = self.main.winfo_x()
+        cur_y = self.main.winfo_y()
+
+        new_width = self.loading_image()
+
+        resize = f"{new_width}x550+{cur_x}+{cur_y}"
+
+        self.main.geometry(resize)
+
+        self.main.frame_map_param.pack(side="left")
+        self.main.frame_layers.pack(side="left")
+
+        print(f"rel frame layer width= {210/new_width}")
+        self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 700)
+
+        self.frame_preview.pack(side="left", fill="both", anchor="nw")
+        self.canvas = Canvas(self.frame_preview, width=new_width - 700, height=550)
+        self.canvas.pack(expand=True, fill="both")
+        self.button_preview_refresh.pack(side="left")
+        self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
+        self.button_preview.configure(state=NORMAL)
+        self.button_preview_refresh.configure(state=NORMAL)
+
+    def map_preview_off(self):
+        print(f"window size={self.main.winfo_width()}x{self.main.winfo_height()}")
+        self.frame_preview.destroy()
+        cur_x = self.main.winfo_x()
+        cur_y = self.main.winfo_y()
+        print(cur_x)
+        print(cur_y)
+        resize = f"700x550+{cur_x}+{cur_y}"
+        self.main.geometry(resize)
+        self.main.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
+        self.main.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
 
     def map_preview_refresh(self):
 
@@ -734,67 +830,6 @@ class MapPreview:
         self.button_preview.configure(state=NORMAL)
         self.button_preview_refresh.configure(state=NORMAL)
 
-    # def get_window_offset(self):
-    #     x_before = self.main.winfo_x()
-    #     y_before = self.main.winfo_y()
-    #     print(f"before =\n{x_before}\n{y_before}\n")
-    #     print(self.main.geometry())
-    #     self.main.geometry(f"800x550")
-    #     x_after = self.main.winfo_x()
-    #     y_after = self.main.winfo_y()
-    #     print(self.main.geometry())
-    #     self.main.geometry(f"700x550")
-    #     print(self.main.geometry())
-    #     print(f"after =\n{x_after}\n{y_after}\n")
-    #     x_offset = x_after - x_before
-    #     y_offset = y_after - y_before
-    #     print(f"offset =\n{x_offset}\n{y_offset}\n")
-    #     return [x_offset, y_offset]
-
-    def map_preview_on(self, success_status, message=""):
-        if not success_status:
-            print(f"Map generation failed: {message}")
-            messagebox.showerror("Map Error", message)  # Show error to user
-            # Handle UI for failure (e.g., revert status, don't show map)
-            self.preview_status = "off"
-            self.button_preview.configure(state=NORMAL)
-            self.button_preview_refresh.pack_forget()
-            return
-        cur_x = self.main.winfo_x()
-        cur_y = self.main.winfo_y()
-
-        new_width = self.loading_image()
-
-        resize = f"{new_width}x550+{cur_x}+{cur_y}"
-
-        self.main.geometry(resize)
-
-        self.main.frame_map_param.pack(side="left")
-        self.main.frame_layers.pack(side="left")
-
-        print(f"rel frame layer width= {210/new_width}")
-        self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 700)
-
-        self.frame_preview.pack(side="left", fill="both", anchor="nw")
-        self.canvas = Canvas(self.frame_preview, width=new_width - 700, height=550)
-        self.canvas.pack(expand=True, fill="both")
-        self.button_preview_refresh.pack(side="left")
-        self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
-        self.button_preview.configure(state=NORMAL)
-        self.button_preview_refresh.configure(state=NORMAL)
-
-    def map_preview_off(self):
-        print(f"window size={self.main.winfo_width()}x{self.main.winfo_height()}")
-        self.frame_preview.destroy()
-        cur_x = self.main.winfo_x()
-        cur_y = self.main.winfo_y()
-        print(cur_x)
-        print(cur_y)
-        resize = f"700x550+{cur_x}+{cur_y}"
-        self.main.geometry(resize)
-        self.main.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
-        self.main.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
-
     def print_script(self):
 
         bounds = self.main.get_coordinate.coord_r
@@ -809,7 +844,7 @@ class MapPreview:
             get_layers = self.main.get_layers
             prev_script.write(f"gmt begin preview_{fname} {exten}\n")
             prev_script.write(f"\tgmt basemap {bounds} -JM20c  -Ba\n")
-            for layer, script in get_layers.layers.items():
+            for layer in get_layers.layers:
                 match layer:
                     case "Coastal line":
                         script = get_layers.coast.script
@@ -829,22 +864,24 @@ class MapPreview:
                         script = get_layers.legend.script
                     case "Cosmetics":
                         script = get_layers.cosmetics.script
+                    case _:
+                        script = ""
                 prev_script.write(f"\t{script}\n")
             prev_script.write(f"gmt end\n")
 
     def threading_process(self, worker, args, name, refresh=False):
         def thread_wrapper():
             try:
-                worker(*args, self.main_queue, refresh)
+                worker(*args, self.preview_queue, refresh)
             except Exception as e:
                 # Catch any unexpected errors in the worker itself and report via queue
-                self.main_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
+                self.preview_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
 
         self.process_thread = threading.Thread(target=thread_wrapper, name=name)
         self.process_thread.daemon = False
         self.process_thread.start()
 
-    def gmt_execute(self, script_name, output_dir, main_queue, refresh):
+    def gmt_execute(self, script_name, output_dir, main_queue: queue.Queue, refresh):
         cwd = os.getcwd()
         os.chdir(output_dir)
         if os.name == "posix":
@@ -882,9 +919,11 @@ class MapPreview:
 
             else:
                 main_queue.put(
-                    "COMPLETE",
-                    False,
-                    f"GMT script failed. Code: {return_code}\nStderr: {stderr}",
+                    (
+                        "COMPLETE",
+                        False,
+                        f"GMT script failed. Code: {return_code}\nStderr: {stderr}",
+                    )
                 )
             if stdout:
                 print("Process Stdout:\n", stdout)
@@ -904,7 +943,7 @@ class MapPreview:
 
     def _check_queue(self):
         try:
-            message_type, *data = self.main_queue.get_nowait()
+            message_type, *data = self.preview_queue.get_nowait()
             if message_type == "COMPLETE":
                 success_status, message = data
                 self.map_preview_on(success_status, message)  # Call GUI update
@@ -1476,8 +1515,6 @@ class Coast(ColorOptions):
         self.parameter_line_thickness(opti, 4, self.line_size)
         self.gmt_color_table(text, row=7, col=0)
 
-        # print(self.script.get())
-
     @property
     def script(self):
         sea = ""
@@ -1538,17 +1575,11 @@ class GrdImage(LayerParameters):
 
 
 class Contour(ColorOptions, LayerParameters):
+    # Unable to obtain remote file no internet
     def __init__(self, main: MainApp, tab):
-
-        # test rekomendasi kontur berdasarkan potongan grdimage
-        # gmt grdinfo @earth_relief_01m -R106.4/106.7/-6.3/-6.1 -G -C -M
-
-        # max-min /10 = index interval
-        # index interval /4 or /5 for contour interval
-        # refresh recomendation contour interval
-        # set label satuan interval
         self.main = main
         map_scale_factor = self.main.get_projection.map_scale_factor
+        print(map_scale_factor)
         recomend = 100
         resolution = "15s"
         intervals = [
@@ -1561,7 +1592,7 @@ class Contour(ColorOptions, LayerParameters):
             (2777750, 250, "01m"),
             (float("inf"), 500, "02m"),
         ]
-
+        self.prev_coord = set([r.get() for r in roi])
         for threshold, recomend, resolution in intervals:
             if map_scale_factor < threshold:
                 break
@@ -1576,6 +1607,7 @@ class Contour(ColorOptions, LayerParameters):
             BooleanVar(tab, value=True),  # toggle the index widget
             BooleanVar(tab, value=True),  # toggle thicker index
             BooleanVar(tab, value=True),  # toggle darker index
+            BooleanVar(tab, value=False),  # toggle unit
         ]
 
         labels = {
@@ -1596,27 +1628,64 @@ class Contour(ColorOptions, LayerParameters):
         self.res = StringVar(value=resolution)
         self.gmt_grd = GrdOptions(self.opti, self.grd, self.res, ctr=True)
         self.parameter_contour_interval()
-        self.grd.trace_add("write", self.update_interval_unit)
-        for var in roi:
-            var.trace_add("write", self.update_interval_unit)
+        self.trace_handlers = []
+        trace_id = self.grd.trace_add("write", self.recomend_interval)
+        self.trace_handlers.append((self.grd, trace_id))
+
+        # for var in roi:
+        #     trace_id = var.trace_add("write", self.recomend_interval)
+        #     self.trace_handlers.append((var, trace_id))
 
         self.after_id = None
         self.parameter_color(self.opti, 4, self.color)
         self.parameter_line_thickness(self.opti, 5, self.thickness)
         self.parameter_contour_index()
-        # self.contour_queue = queue.Queue()
-        # self.main.after(100, self.estimate_interval)
+        self.contour_queue = queue.Queue()
+        self.main.after(100, self._check_queue)
 
-    # def _check_queue(self):
-    #     try:
-    #         message_type, *data=self.contour_queue.get_nowait()
-    #         if message_type =="COMPLETE":
-    #             pass
-    #     except Exception as e:
-    #         print(e)
-    def estimate_interval(self):
-        command = f"gmt grdinfo {self.grd.get()}{self.res.get()} {self.main.get_coordinate.coord_r} -G -C -M"
-        self.entry_interval.configure(state=DISABLED)
+    def roi_changes_check(self):
+        for r in roi:
+            self.prev_coord.add(r.get())
+
+        if len(self.prev_coord) != 4:
+            self.prev_coord = set([r.get() for r in roi])
+            self.recomend_interval()
+            print("-" * 20)
+            print("coordinate berubah")
+
+    def _check_queue(self):
+        try:
+            status, recomendation = self.contour_queue.get_nowait()
+            if status == "COMPLETE":
+                print("calculating sucess")
+                self.update_unit_and_interval(recomendation)
+            elif status == "FAIL":
+                print("calculating failed")
+                self.update_unit_and_interval("", recomendation)
+
+        except queue.Empty:
+            pass
+
+        self.main.after(100, self._check_queue)
+        self.main.after(100, self.roi_changes_check)
+
+    def remove_traces(self):
+        print("Contour instance being destroyed, removing traces...")
+        for var, trace_id in self.trace_handlers:
+            try:
+                var.trace_remove("write", trace_id)
+                print("trace {trace_id} from {var} removed")
+            except TclError as e:
+                print(f"error removing trace {trace_id} from {var}: {e}")
+
+    def estimate_interval(self, grd, res, coord):
+        """check also, is there any data
+        min max ada? atau nan nan
+
+        buat script untuk check errornya dimana"""
+        print("estimating contour interval")
+        command = f"gmt grdinfo {grd}{res} {coord} -G -C -M"
+
         try:
             est_interval = subprocess.Popen(
                 command,
@@ -1624,49 +1693,110 @@ class Contour(ColorOptions, LayerParameters):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                universal_newlines=True,
             )
             stdout, stderr = est_interval.communicate()
             return_code = est_interval.returncode
+
+            # debug
+            print(" " * 20 + "stdout")
+            print(stdout)
+            print(" " * 20 + "stderr")
+            print(stderr)
             grdinfo = stdout.split("\t")
+            print(" " * 20 + "return code")
+            print(return_code)
+
+            if "Unable to obtain remote file" in stderr:
+                message = f"Couldn't connect to GMT remote server for downloading {grd}{res} data.\nConnect to internet or change network connection."
+                raise ConnectionError(message)
+            min = grdinfo[5]
+            max = grdinfo[6]
+            if min.lower() == "nan" or max.lower() == "nan":
+
+                raise ValueError(
+                    f"No data {grd}{res} in this area..\nChoose another grid data or delete the Contour layer."
+                )
+
             min = float(grdinfo[5])
             max = float(grdinfo[6])
-            raw_interval = int((max - min) / 40)
+            print(" " * 20 + "min")
+            print(min)
+            print(" " * 20 + "max")
+            print(max)
+            raw_interval = (max - min) / 40
             recomendation = self.round_value(raw_interval)
             if return_code == 0:
-                self.interval[0].set(str(recomendation))
-                self.interval_updater()
+                self.contour_queue.put(("COMPLETE", recomendation))
+            else:
+                self.contour_queue.put(("FAIL", ""))
 
-            self.entry_interval.configure(state=NORMAL)
+        except ValueError as e:
+            self.contour_queue.put(("FAIL", e))
+        except ConnectionError as e:
+            self.contour_queue.put(("FAIL", e))
         except Exception as e:
-            self.entry_interval.configure(state=NORMAL)
+            print("=" * 25)
+            print("estimating contour interval error")
             print(e)
-            self.interval[0].set("0")
-            self.interval_updater()
+            self.contour_queue.put(("FAIL", ""))
+
+    def recomend_interval(self, *_):
+        self.interval[0].set("estimating..")
+        self.entry_interval.configure(state=DISABLED, text_color="gray")
+        if self.res.get() not in self.gmt_grd.dict[self.gmt_grd.grdimg_resource.get()]:
+            self.res.set(self.gmt_grd.dict[self.gmt_grd.grdimg_resource.get()][1])
+        self.prev_coord = set([r.get() for r in roi])
+        calc_thread = threading.Thread(
+            target=self.estimate_interval,
+            args=[self.grd.get(), self.res.get(), self.main.get_coordinate.coord_r],
+            name="est contour interval",
+        )
+        calc_thread.daemon = True
+        calc_thread.start()
 
     def round_value(self, value):
         if not isinstance(value, (int, float)):
             print(f"Warning: Input '{value}' is not a number. Returning None.")
-            return None
-
-        if value < 10:
-            return round(value)
+            return ""
+        if 0 < value < 1:
+            return f"{value:.2f}"
+        elif 1 < value < 10:
+            return str(round(value))
         elif 10 <= value <= 50:
-            return round(value, 1)
+            return str(round(value, 1))
         elif 50 < value <= 100:
-            return round(value, -1)
+            return str(round(value, -1))
         elif 100 < value <= 1000:
-            return round(value, -2)
+            return str(round(value, -2))
         elif value > 1000:
-            return round(value, -3)
+            return str(round(value, -3))
         else:
-            return value
+            return str(value)
 
-    def update_interval_unit(self, var, index, mode):
+    def update_unit_and_interval(self, rec: str, status: str = ""):
         self.label_unit.configure(text=self.gmt_grd.unit)
-        if self.after_id:
-            self.main.after_cancel(self.after_id)
+        self.unit_annot.configure(text=self.gmt_grd.unit)
+        self.entry_interval.configure(state=NORMAL, text_color="green")
+        if rec == "":
+            messagebox.showerror("Error", status)
+            self.entry_interval.configure(text_color="yellow")
+            self.interval[0].set("0")
+            self.interval[1].set("0")
+            return
+        self.interval[0].set(rec)
+        self.interval[1].set(str(float(rec) * 4))
+        self.index_options()
 
-        self.after_id = self.main.after(500, self.estimate_interval)
+    def interval_manual_input(self):
+        try:
+            num = float(self.interval[0].get())
+            self.interval[1].set(str(num * 4))
+            self.index_options()
+            self.entry_interval.configure(text_color="white")
+        except ValueError:
+            self.entry_interval.configure(text_color="red")
+            self.index_options()
 
     def parameter_contour_interval(self):
 
@@ -1675,9 +1805,13 @@ class Contour(ColorOptions, LayerParameters):
             textvariable=self.interval[0],
         )
 
-        self.entry_interval.bind("<FocusOut>", lambda event: self.interval_updater())
-        self.entry_interval.bind("<KeyRelease>", lambda event: self.interval_updater())
-        self.entry_interval.bind("<Return>", lambda event: self.interval_updater())
+        self.entry_interval.bind(
+            "<FocusOut>", lambda event: self.interval_manual_input()
+        )
+        self.entry_interval.bind(
+            "<KeyRelease>", lambda event: self.interval_manual_input()
+        )
+        self.entry_interval.bind("<Return>", lambda event: self.interval_manual_input())
 
         self.label_unit = CTkLabel(self.opti, text=self.gmt_grd.unit)
         self.label_unit.grid(row=3, column=2, sticky="w", padx=[0, 5])
@@ -1685,11 +1819,17 @@ class Contour(ColorOptions, LayerParameters):
         self.index_options()
 
     def index_options(self):
-        contour_index_opt = [
-            float(self.interval[0].get()) * 4,
-            float(self.interval[0].get()) * 5,
-            float(self.interval[0].get()) * 6,
-        ]
+        try:
+            interval = float(self.interval[0].get())
+            _ = 1 / interval
+            contour_index_opt = [
+                interval * 4,
+                interval * 5,
+                interval * 6,
+            ]
+        except (ValueError, ZeroDivisionError):
+            contour_index_opt = []
+
         index_interval = ctk.CTkOptionMenu(
             self.opti,
             variable=self.interval[1],
@@ -1709,16 +1849,7 @@ class Contour(ColorOptions, LayerParameters):
             autocomplete=True,
             scrollbar=False,
         )
-        index_interval.grid(row=6, column=1, columnspan=3)
-
-    def interval_updater(self):
-        try:
-            num = float(self.interval[0].get())
-            self.interval[1].set(str(num * 4))
-            self.index_options()
-            self.entry_interval.configure(text_color="white")
-        except ValueError:
-            self.entry_interval.configure(text_color="red")
+        index_interval.grid(row=6, column=1, columnspan=2)
 
     def parameter_contour_index(self):
 
@@ -1733,10 +1864,20 @@ class Contour(ColorOptions, LayerParameters):
             onvalue=True,
             offvalue=False,
         )
-
+        self.unit_annot = CTkCheckBox(
+            self.opti,
+            text=self.gmt_grd.unit,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            variable=self.index[3],
+            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue=True,
+            offvalue=False,
+        )
         thicker = CTkCheckBox(
             self.opti,
-            text="Thicker Index",
+            text=f"Thicker Index",
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
@@ -1759,7 +1900,7 @@ class Contour(ColorOptions, LayerParameters):
         )
 
         index.grid(row=6, column=0)
-
+        self.unit_annot.grid(row=6, column=3, columnspan=3)
         thicker.grid(row=7, column=0, columnspan=3)
 
         darker.grid(row=7, column=3, columnspan=3)
@@ -1780,10 +1921,10 @@ class Contour(ColorOptions, LayerParameters):
             color_index = self.color.get()
 
         if self.index[0].get():
-            unit = self.gmt_grd.unit
-            interval = (
-                f"-A{self.interval[1].get()}+ap+u-{unit} -C{self.interval[0].get()}"
-            )
+            unit = ""
+            if self.index[3].get():
+                unit = f'+u" {self.gmt_grd.unit}"'
+            interval = f"-A{self.interval[1].get()}+ap{unit} -C{self.interval[0].get()}"
             color = f"-Wa{thickness_index},{color_index} -Wc{self.thickness.get()},{self.color.get()}"
         else:
             interval = f"-C{self.interval[0].get()}"
@@ -1892,9 +2033,9 @@ class Earthquake(LayerMenu, LayerParameters):
                     ("COMPLETE", False, f"Worker thread error: {e}")
                 )
 
-        self.process_thread = threading.Thread(target=thread_wrapper, name=name)
-        self.process_thread.daemon = False
-        self.process_thread.start()
+        self.download_thread = threading.Thread(target=thread_wrapper, name=name)
+        self.download_thread.daemon = False
+        self.download_thread.start()
 
     @property
     def script(self):
