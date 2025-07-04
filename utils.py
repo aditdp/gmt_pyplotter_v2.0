@@ -245,3 +245,137 @@ def gmt_execute(script_name, output_dir, folowing: list):
     except Exception as e:
         f"[{threading.current_thread().name}] An error occurred: {e}"
     os.chdir(cwd)
+
+
+def recommend_contour_interval(map_scale_factor, min_value, max_value):
+
+    if not isinstance(map_scale_factor, (int, float)) or map_scale_factor <= 0:
+        return None
+    if not isinstance(min_value, (int, float)) or not isinstance(
+        max_value, (int, float)
+    ):
+        return None
+    if min_value >= max_value:
+        return None
+
+    total_relief = max_value - min_value
+
+    scale_category = ""
+    if map_scale_factor < 5000:
+        scale_category = "Very Large Scale"
+    elif 5000 <= map_scale_factor <= 25000:
+        scale_category = "Large Scale"
+    elif 25000 < map_scale_factor <= 100000:
+        scale_category = "Medium Scale"
+    else:  # map_scale_denominator > 100000
+        scale_category = "Small Scale"
+
+    relief_category = ""
+    if total_relief < 10:
+        relief_category = "Very Low Relief"
+    elif 10 <= total_relief < 100:
+        relief_category = "Low to Moderate Relief"
+    elif 100 <= total_relief < 500:
+        relief_category = "Moderate to High Relief"
+    else:  # total_relief >= 500
+        relief_category = "Very High Relief"
+
+    recommended_ci = None
+
+    standard_cis = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
+
+    if scale_category == "Very Large Scale":
+        if relief_category == "Very Low Relief":
+            recommended_ci = 0.25
+
+        elif relief_category == "Low to Moderate Relief":
+            recommended_ci = 1
+
+        else:  # Moderate to High / Very High Relief
+            recommended_ci = 2
+
+    elif scale_category == "Large Scale":
+        if relief_category == "Very Low Relief":
+            recommended_ci = 1
+
+        elif relief_category == "Low to Moderate Relief":
+            recommended_ci = 2
+
+        elif relief_category == "Moderate to High Relief":
+            recommended_ci = 5
+
+        else:  # Very High Relief (Mountainous)
+            recommended_ci = 10
+
+    elif scale_category == "Medium Scale":
+        if relief_category == "Very Low Relief":
+            # Very flat terrain is rarely mapped at medium scales for detailed contours
+            recommended_ci = 2
+
+        elif relief_category == "Low to Moderate Relief":
+            recommended_ci = 5
+
+        elif relief_category == "Moderate to High Relief":
+            recommended_ci = 10
+
+        else:  # Very High Relief (Mountainous)
+            recommended_ci = 20
+
+    else:  # scale_category == "Small Scale"
+        if relief_category == "Very Low Relief":
+            # Very flat terrain is almost never mapped with contours at small scales
+            recommended_ci = 10
+
+        elif relief_category == "Low to Moderate Relief":
+            recommended_ci = 20
+
+        elif relief_category == "Moderate to High Relief":
+            recommended_ci = 50
+
+        else:  # Very High Relief (Mountainous)
+            recommended_ci = 100
+
+    if recommended_ci is not None:
+        closest_ci = min(standard_cis, key=lambda x: abs(x - recommended_ci))
+        recommended_ci = closest_ci
+
+    return recommended_ci
+
+
+RECOMMENDED_DEM_RESOLUTION_MAP = {
+    2000: "01s",
+    7500: "03s",
+    15000: "15s",
+    35000: "30s",
+    75000: "01m",
+    150000: "02m",
+    250000: "03m",
+    500000: "05m",
+    1000000: "10m",
+    2500000: "15m",
+    5000000: "30m",
+    float("inf"): "01d",
+}
+
+
+def recommend_dem_resolution(map_scale_factor):
+    """
+    Recommends a suitable DEM resolution (in a standard format like "1s", "5m", or "1deg")
+    based on the map scale.
+
+    Args:
+        map_scale_denominator (int): The denominator of the map's representative fraction scale
+                                     (e.g., 10000 for 1:10000).
+
+    Returns:
+        str: The recommended DEM resolution in string format, or '01m' if input is invalid'.
+    """
+
+    if not isinstance(map_scale_factor, (int, float)) or map_scale_factor <= 0:
+        return "01m"
+
+    for threshold, dem_res_string in RECOMMENDED_DEM_RESOLUTION_MAP.items():
+        if map_scale_factor <= threshold:
+            return dem_res_string
+
+    return "01m"

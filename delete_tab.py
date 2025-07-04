@@ -490,7 +490,7 @@ class MapProjection(CTkFrame):
     @property
     def map_scale_factor(self):
         width = float(roi[1].get()) - float(roi[0].get())
-        return width * 111.11 / (int(self.proj_width.get()) * 0.0001)
+        return width * 111.11 / (int(self.proj_width.get()) * 0.00001)
 
 
 class LayerMenu(ctk.CTkFrame):
@@ -1578,31 +1578,15 @@ class Contour(ColorOptions, LayerParameters):
     # Unable to obtain remote file no internet
     def __init__(self, main: MainApp, tab):
         self.main = main
-        map_scale_factor = self.main.get_projection.map_scale_factor
-        print(map_scale_factor)
-        recomend = 100
-        resolution = "15s"
-        intervals = [
-            (2778, 6.25, "01s"),
-            (27775, 12.5, "03s"),
-            (60000, 25, "15s"),
-            (110000, 50, "30s"),
-            (277750, 100, "30s"),
-            (555500, 125, "30s"),
-            (2777750, 250, "01m"),
-            (float("inf"), 500, "02m"),
-        ]
-        self.prev_coord = set([r.get() for r in roi])
-        for threshold, recomend, resolution in intervals:
-            if map_scale_factor < threshold:
-                break
-        self.color = StringVar(tab, "gray20")
+
+        print("=" * 20)
+        print(self.map_scale_factor)
+        resolution = recommend_dem_resolution(self.map_scale_factor)
+
+        self.color = StringVar(tab, "gray60")
         self.thickness = StringVar(tab, "0.25p")
 
-        self.interval = [
-            StringVar(tab, value=str(recomend)),
-            StringVar(tab, value=str(recomend * 4)),
-        ]
+        self.interval = [StringVar(), StringVar()]
         self.index = [
             BooleanVar(tab, value=True),  # toggle the index widget
             BooleanVar(tab, value=True),  # toggle thicker index
@@ -1642,6 +1626,11 @@ class Contour(ColorOptions, LayerParameters):
         self.parameter_contour_index()
         self.contour_queue = queue.Queue()
         self.main.after(100, self._check_queue)
+        self.recomend_interval()
+
+    @property
+    def map_scale_factor(self):
+        return self.main.get_projection.map_scale_factor
 
     def roi_changes_check(self):
         for r in roi:
@@ -1649,6 +1638,9 @@ class Contour(ColorOptions, LayerParameters):
 
         if len(self.prev_coord) != 4:
             self.prev_coord = set([r.get() for r in roi])
+            new_res = recommend_dem_resolution(self.map_scale_factor)
+
+            self.res.set(new_res)
             self.recomend_interval()
             print("-" * 20)
             print("coordinate berubah")
@@ -1678,7 +1670,7 @@ class Contour(ColorOptions, LayerParameters):
             except TclError as e:
                 print(f"error removing trace {trace_id} from {var}: {e}")
 
-    def estimate_interval(self, grd, res, coord):
+    def estimate_interval(self, scale_factor, grd, res, coord):
         """check also, is there any data
         min max ada? atau nan nan
 
@@ -1724,8 +1716,9 @@ class Contour(ColorOptions, LayerParameters):
             print(min)
             print(" " * 20 + "max")
             print(max)
-            raw_interval = (max - min) / 40
-            recomendation = self.round_value(raw_interval)
+            if min < 0:
+                min = 0
+            recomendation = recommend_contour_interval(scale_factor, min, max)
             if return_code == 0:
                 self.contour_queue.put(("COMPLETE", recomendation))
             else:
@@ -1749,30 +1742,35 @@ class Contour(ColorOptions, LayerParameters):
         self.prev_coord = set([r.get() for r in roi])
         calc_thread = threading.Thread(
             target=self.estimate_interval,
-            args=[self.grd.get(), self.res.get(), self.main.get_coordinate.coord_r],
+            args=[
+                self.map_scale_factor,
+                self.grd.get(),
+                self.res.get(),
+                self.main.get_coordinate.coord_r,
+            ],
             name="est contour interval",
         )
         calc_thread.daemon = True
         calc_thread.start()
 
-    def round_value(self, value):
-        if not isinstance(value, (int, float)):
-            print(f"Warning: Input '{value}' is not a number. Returning None.")
-            return ""
-        if 0 < value < 1:
-            return f"{value:.2f}"
-        elif 1 < value < 10:
-            return str(round(value))
-        elif 10 <= value <= 50:
-            return str(round(value, 1))
-        elif 50 < value <= 100:
-            return str(round(value, -1))
-        elif 100 < value <= 1000:
-            return str(round(value, -2))
-        elif value > 1000:
-            return str(round(value, -3))
-        else:
-            return str(value)
+    # def round_value(self, value):
+    #     if not isinstance(value, (int, float)):
+    #         print(f"Warning: Input '{value}' is not a number. Returning None.")
+    #         return ""
+    #     if 0 < value < 1:
+    #         return f"{value:.2f}"
+    #     elif 1 < value < 10:
+    #         return str(round(value))
+    #     elif 10 <= value <= 50:
+    #         return str(round(value, 1))
+    #     elif 50 < value <= 100:
+    #         return str(round(value, -1))
+    #     elif 100 < value <= 1000:
+    #         return str(round(value, -2))
+    #     elif value > 1000:
+    #         return str(round(value, -3))
+    #     else:
+    #         return str(value)
 
     def update_unit_and_interval(self, rec: str, status: str = ""):
         self.label_unit.configure(text=self.gmt_grd.unit)
@@ -1916,7 +1914,7 @@ class Contour(ColorOptions, LayerParameters):
         if self.index[2].get():
             r, g, b = self.any_to_r_g_b(self.color.get())
 
-            color_index = f"{int(int(r)*0.8)}/{int(int(g)*0.8)}/{int(int(b)*0.8)}"
+            color_index = f"{int(int(r)*0.6)}/{int(int(g)*0.6)}/{int(int(b)*0.6)}"
         else:
             color_index = self.color.get()
 
