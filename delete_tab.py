@@ -2,6 +2,7 @@ import customtkinter as ctk
 import os, threading, subprocess
 from customtkinter import (
     StringVar,
+    IntVar,
     DoubleVar,
     BooleanVar,
     CTkButton,
@@ -23,7 +24,7 @@ from functools import wraps
 # from CTkListbox import CTkListbox
 from pathlib import Path
 from PIL import Image, ImageTk
-from datetime import datetime
+from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from ctk_tooltip import CTkToolTip
 from ctk_coordinate_gui import CoordWindow
@@ -572,7 +573,10 @@ class LayerMenu(ctk.CTkFrame):
                 if hasattr(self, "coast") and self.coast is not None:
                     del self.coast
             case "Earth relief":
-                if hasattr(self, "grdimage") and self.grdimage is not None:
+                if self.grdimage.after_id:
+                    self.main.after_cancel(self.grdimage.after_id)
+                    # if hasattr(self, "grdimage") and self.grdimage is not None:
+
                     del self.grdimage
             case "Contour line":
                 print("deleting contour instance")
@@ -615,7 +619,7 @@ class LayerMenu(ctk.CTkFrame):
             case "Coastal line":
                 self.coast = Coast(new_layer, self)
             case "Earth relief":
-                self.grdimage = GrdImage(new_layer, self)
+                self.grdimage = GrdImage(self.main, new_layer)
             case "Contour line":
                 self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
@@ -967,190 +971,15 @@ class MapPreview:
         return new_width
 
 
-class LayerParameters:
+# class LayerParameters:
 
-    def parameter_cpt(self, opti, row):
-        from color_list import palette_name
 
-        self.grdimg_cpt_color = StringVar(opti, value="geo")
-
-        entry = ctk.CTkOptionMenu(
-            opti,
-            variable=self.grdimg_cpt_color,
-            values=palette_name,
-            fg_color="#565B5E",
-            button_color="#565B5E",
-            button_hover_color="#7A848D",
-        )
-        CTkScrollableDropdown(
-            entry,
-            values=palette_name,
-            command=lambda e: self.grdimg_cpt_color.set(e),
-            width=200,
-            height=300,
-            justify="left",
-            resize=False,
-            autocomplete=True,
-        )
-
-        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
-
-    def parameter_shading(self, opti, row):
-        """Variable created :
-        self.grdimg_shading
-        self.grdimg_shading_az"""
-        self.grdimg_shading = ctk.StringVar(opti, "on")
-        self.grdimg_shading_az = StringVar(opti, value="-45")
-        entry = CTkEntry(
-            opti,
-            textvariable=self.grdimg_shading_az,
-            justify="right",
-        )
-        check = CTkCheckBox(
-            opti,
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            text="",
-            variable=self.grdimg_shading,
-            command=lambda: self.shading_azimuth_set(entry, label2, label3),
-            onvalue="on",
-            offvalue="off",
-        )
-
-        check.grid(row=row, column=0)
-
-        label2 = CTkLabel(opti, text="Azimuth :", anchor="e")
-        label3 = CTkLabel(opti, text=" º", anchor="w")
-        entry.grid(row=row, column=3, sticky="ew")
-        label2.grid(row=row, column=1, columnspan=2, sticky="nsew", padx=10)
-        label3.grid(row=row, column=4, columnspan=1, sticky="nsew")
-
-    def shading_azimuth_set(self, entry, label2, label3):
-        if self.grdimg_shading.get() == "on":
-            entry.configure(state=NORMAL, text_color="white")
-            label2.configure(state=NORMAL)
-            label3.configure(state=NORMAL)
-        else:
-            entry.configure(state=DISABLED, text_color="#565B5E")
-            label2.configure(state=DISABLED)
-            label3.configure(state=DISABLED)
-
-    def parameter_masking(self, opti, row):
-        self.grdimg_masking = ctk.StringVar(opti, value="off")
-
-        check = CTkCheckBox(
-            opti,
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            text="",
-            variable=self.grdimg_masking,
-            onvalue="on",
-            offvalue="off",
-        )
-        check.grid(row=row, column=0, columnspan=1, sticky="ew")
-
-    def parameter_date(self, frame, row, var, start=False):
-        date = datetime.now()
-        if start == True:
-            date = datetime.now() - relativedelta(years=1)
-        var = DateEntry(frame, date)
-        var.grid(row=row, column=0, columnspan=5, sticky="ew")
-
-    def parameter_magnitude_range(self, opti, row):
-        self.magnitudes = DoubleVar(value=0), DoubleVar(value=10)
-        range = CTkRangeSlider(
-            opti,
-            variables=self.magnitudes,
-            from_=0,
-            to=10,
-            number_of_steps=100,
-            button_length=5,
-            height=10,
-            button_color="dim gray",
-        )
-        range.grid(column=1, row=row, columnspan=3, padx=5)
-        entry_mag_min = CTkEntry(opti, textvariable=self.magnitudes[0])
-        entry_mag_max = CTkEntry(opti, width=50, textvariable=self.magnitudes[1])
-
-        entry_mag_min.grid(column=0, row=row, sticky="ew", padx=5)
-        entry_mag_max.grid(column=4, row=row, sticky="ew")
-        label = CTkLabel(opti, text="M", anchor="w")
-        label.grid(column=5, row=row, sticky="w", padx=3)
-
-    def parameter_depth_range(self, opti, row):  # custom depth range coloring feature
-        self.depths = ctk.IntVar(value=0), ctk.IntVar(value=1000)
-        range = CTkRangeSlider(
-            opti,
-            variables=self.depths,
-            from_=0,
-            to=1000,
-            number_of_steps=1000,
-            button_length=5,
-            height=10,
-            button_color="dim gray",
-        )
-        range.grid(column=1, row=row, columnspan=3, padx=5)
-        entry_dep_min = CTkEntry(opti, textvariable=self.depths[0])
-        entry_dep_max = CTkEntry(opti, width=50, textvariable=self.depths[1])
-        label = CTkLabel(opti, text="Km", anchor="w")
-        label.grid(column=5, row=row, sticky="w", padx=3)
-
-        entry_dep_min.grid(column=0, row=row, sticky="ew", padx=5)
-        entry_dep_max.grid(column=4, row=row)
-
-    def parameter_eq_size(self, opti, row):  # slider auto update the preview if open
-        self.circle_size = ctk.DoubleVar(opti, 1)
-        slider_size = ctk.CTkSlider(
-            opti,
-            variable=self.circle_size,
-            from_=0,
-            to=2,
-            button_length=5,
-            height=10,
-            button_color="dim gray",
-        )
-        entry = CTkEntry(opti, textvariable=self.circle_size)
-        entry.grid(column=4, row=row, columnspan=1)
-        slider_size.grid(column=1, row=row, columnspan=3)
-
-    def parameter_fm_size(self):
-        pass
-
-    def parameter_catalog_source(self, opti, row, focmec=None):
-        catalog = ["USGS", "ISC", "GlobalCMT", "User supplied"]
-        if focmec is True:
-            cat = catalog[2:]
-        else:
-            cat = catalog[0:2] + catalog[3:]
-        self.catalog = StringVar(value=cat[0])
-        entry = ctk.CTkOptionMenu(
-            opti,
-            variable=self.catalog,
-            values=cat,
-            fg_color="#565B5E",
-            button_color="#565B5E",
-            button_hover_color="#7A848D",
-        )
-        CTkScrollableDropdown(
-            entry,
-            values=cat,
-            command=lambda e: self.catalog.set(e),
-            width=200,
-            height=100,
-            justify="left",
-            resize=False,
-            autocomplete=True,
-        )
-        entry.grid(column=0, row=row, columnspan=3, sticky="ew")
-
-    # ctk.CTkSlider()
-    def padding(self, text, opti, number):
-        text_padding = CTkLabel(text, text="", fg_color="red")
-        text_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
-        opti_padding = CTkLabel(opti, text="", fg_color="red")
-        opti_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
+#     # ctk.CTkSlider()
+#     def padding(self, text, opti, number):
+#         text_padding = CTkLabel(text, text="", fg_color="red")
+#         text_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
+#         opti_padding = CTkLabel(opti, text="", fg_color="red")
+#         opti_padding.grid(column=0, row=11 - number, rowspan=number, sticky="nswe")
 
 
 class GrdOptions:
@@ -1534,9 +1363,9 @@ class Coast(ColorOptions):
         return script
 
 
-class GrdImage(LayerParameters):
-    def __init__(self, tab, menu):
-        self.menu = menu
+class GrdImage:
+    def __init__(self, main: MainApp, tab):
+        self.main = main
         labels = {
             "Grid data": "",
             "Grid resolution": "",
@@ -1544,14 +1373,115 @@ class GrdImage(LayerParameters):
             "Grid Shading": "",
             "Sea Masking": "",
         }
-        text, opti = self.menu.tab_menu_layout_divider(tab)
-        self.menu.parameter_labels(text, labels)
+        text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+        print(f"map scale factor = {self.map_scale_factor}")
+        resolution = self.update_resolution()
+        self.grdimg_cpt_color = StringVar(opti, value="geo")
+        self.grdimg_shading = ctk.StringVar(opti, "on")
+        self.grdimg_shading_az = StringVar(opti, value="-45")
+        self.grdimg_masking = ctk.StringVar(opti, value="off")
         self.grd = StringVar()
-        self.res = StringVar()
+        self.res = StringVar(value=resolution)
         self.gmt_grd = GrdOptions(opti, self.grd, self.res)
         self.parameter_cpt(opti, 3)
         self.parameter_shading(opti, 4)
         self.parameter_masking(opti, 5)
+        self.main.get_layers.parameter_labels(text, labels)
+        self.roi_changes_check()
+
+    def update_resolution(self):
+        self.prev_coord = set([r.get() for r in roi])
+        resolution = recommend_dem_resolution(self.map_scale_factor)
+        return resolution
+
+    def roi_changes_check(self):
+        for r in roi:
+            self.prev_coord.add(r.get())
+
+        if len(self.prev_coord) != 4:
+            self.prev_coord = set([r.get() for r in roi])
+            new_res = recommend_dem_resolution(self.map_scale_factor)
+
+            self.res.set(new_res)
+            self.update_resolution()
+            print("-" * 20)
+            print("coordinate berubah")
+        self.after_id = self.main.after(100, self.roi_changes_check)
+
+    def parameter_cpt(self, opti, row):
+        from color_list import palette_name
+
+        entry = ctk.CTkOptionMenu(
+            opti,
+            variable=self.grdimg_cpt_color,
+            values=palette_name,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=palette_name,
+            command=lambda e: self.grdimg_cpt_color.set(e),
+            width=200,
+            height=300,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+        )
+
+        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
+
+    def parameter_shading(self, opti, row):
+
+        entry = CTkEntry(
+            opti,
+            textvariable=self.grdimg_shading_az,
+            justify="right",
+        )
+        check = CTkCheckBox(
+            opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=self.grdimg_shading,
+            command=lambda: self.shading_azimuth_set(entry, label2, label3),
+            onvalue="on",
+            offvalue="off",
+        )
+
+        check.grid(row=row, column=0)
+
+        label2 = CTkLabel(opti, text="Azimuth :", anchor="e")
+        label3 = CTkLabel(opti, text=" º", anchor="w")
+        entry.grid(row=row, column=3, sticky="ew")
+        label2.grid(row=row, column=1, columnspan=2, sticky="nsew", padx=10)
+        label3.grid(row=row, column=4, columnspan=1, sticky="nsew")
+
+    def shading_azimuth_set(self, entry, label2, label3):
+        if self.grdimg_shading.get() == "on":
+            entry.configure(state=NORMAL, text_color="white")
+            label2.configure(state=NORMAL)
+            label3.configure(state=NORMAL)
+        else:
+            entry.configure(state=DISABLED, text_color="#565B5E")
+            label2.configure(state=DISABLED)
+            label3.configure(state=DISABLED)
+
+    def parameter_masking(self, opti, row):
+
+        check = CTkCheckBox(
+            opti,
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            text="",
+            variable=self.grdimg_masking,
+            onvalue="on",
+            offvalue="off",
+        )
+        check.grid(row=row, column=0, columnspan=1, sticky="ew")
 
     @staticmethod
     def abc(row: int, col: int):
@@ -1560,6 +1490,10 @@ class GrdImage(LayerParameters):
     @staticmethod
     def cde(row, col):
         print(row + col)
+
+    @property
+    def map_scale_factor(self):
+        return self.main.get_projection.map_scale_factor
 
     @property
     def script(self):
@@ -1574,18 +1508,13 @@ class GrdImage(LayerParameters):
         return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
 
-class Contour(ColorOptions, LayerParameters):
+class Contour(ColorOptions):
     # Unable to obtain remote file no internet
     def __init__(self, main: MainApp, tab):
         self.main = main
-
-        print("=" * 20)
-        print(self.map_scale_factor)
         resolution = recommend_dem_resolution(self.map_scale_factor)
-
         self.color = StringVar(tab, "gray60")
         self.thickness = StringVar(tab, "0.25p")
-
         self.interval = [StringVar(), StringVar()]
         self.index = [
             BooleanVar(tab, value=True),  # toggle the index widget
@@ -1593,7 +1522,6 @@ class Contour(ColorOptions, LayerParameters):
             BooleanVar(tab, value=True),  # toggle darker index
             BooleanVar(tab, value=False),  # toggle unit
         ]
-
         labels = {
             "Grid data": "",
             "Grid resolution": "",
@@ -1615,11 +1543,6 @@ class Contour(ColorOptions, LayerParameters):
         self.trace_handlers = []
         trace_id = self.grd.trace_add("write", self.recomend_interval)
         self.trace_handlers.append((self.grd, trace_id))
-
-        # for var in roi:
-        #     trace_id = var.trace_add("write", self.recomend_interval)
-        #     self.trace_handlers.append((var, trace_id))
-
         self.after_id = None
         self.parameter_color(self.opti, 4, self.color)
         self.parameter_line_thickness(self.opti, 5, self.thickness)
@@ -1671,10 +1594,6 @@ class Contour(ColorOptions, LayerParameters):
                 print(f"error removing trace {trace_id} from {var}: {e}")
 
     def estimate_interval(self, scale_factor, grd, res, coord):
-        """check also, is there any data
-        min max ada? atau nan nan
-
-        buat script untuk check errornya dimana"""
         print("estimating contour interval")
         command = f"gmt grdinfo {grd}{res} {coord} -G -C -M"
 
@@ -1712,27 +1631,30 @@ class Contour(ColorOptions, LayerParameters):
 
             min = float(grdinfo[5])
             max = float(grdinfo[6])
+            # debug
             print(" " * 20 + "min")
             print(min)
             print(" " * 20 + "max")
             print(max)
+
             if min < 0:
                 min = 0
             recomendation = recommend_contour_interval(scale_factor, min, max)
             if return_code == 0:
                 self.contour_queue.put(("COMPLETE", recomendation))
             else:
-                self.contour_queue.put(("FAIL", ""))
+                self.contour_queue.put(("FAIL", stderr))
 
         except ValueError as e:
             self.contour_queue.put(("FAIL", e))
         except ConnectionError as e:
             self.contour_queue.put(("FAIL", e))
         except Exception as e:
+            self.contour_queue.put(("FAIL", e))
+
             print("=" * 25)
             print("estimating contour interval error")
             print(e)
-            self.contour_queue.put(("FAIL", ""))
 
     def recomend_interval(self, *_):
         self.interval[0].set("estimating..")
@@ -1752,25 +1674,6 @@ class Contour(ColorOptions, LayerParameters):
         )
         calc_thread.daemon = True
         calc_thread.start()
-
-    # def round_value(self, value):
-    #     if not isinstance(value, (int, float)):
-    #         print(f"Warning: Input '{value}' is not a number. Returning None.")
-    #         return ""
-    #     if 0 < value < 1:
-    #         return f"{value:.2f}"
-    #     elif 1 < value < 10:
-    #         return str(round(value))
-    #     elif 10 <= value <= 50:
-    #         return str(round(value, 1))
-    #     elif 50 < value <= 100:
-    #         return str(round(value, -1))
-    #     elif 100 < value <= 1000:
-    #         return str(round(value, -2))
-    #     elif value > 1000:
-    #         return str(round(value, -3))
-    #     else:
-    #         return str(value)
 
     def update_unit_and_interval(self, rec: str, status: str = ""):
         self.label_unit.configure(text=self.gmt_grd.unit)
@@ -1931,21 +1834,15 @@ class Contour(ColorOptions, LayerParameters):
         return f"gmt grdcontour {remote_data} {interval} {color} -LP "
 
 
-class Earthquake(LayerMenu, LayerParameters):
-    # tanggal awal
-    # tanggal akhir
-    # sumber katalog usgs, isc, user supplied
-    # minmax magnitude rangeslider
-    # minmax depth rangeslider
-    def __init__(self, tab, main):
+class Earthquake(LayerMenu):
+
+    def __init__(self, tab, main: MainApp):
         self.main = main
-        self.date_start = StringVar(tab, "lightgreen")
-        self.date_end = StringVar(tab, value="lightblue")
         self.eq_catalog = StringVar(tab, value="USGS")
-        self.mag_min = StringVar(tab, value="0")
-        self.mag_max = StringVar(tab, value="10")
-        self.dep_min = StringVar(tab, value="0")
-        self.dep_max = StringVar(tab, value="1000")
+        self.dates = [StringVar(), StringVar()]
+        self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
+        self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
+        self.circle_size = ctk.DoubleVar(tab, 1)
         self.download_queue = queue.Queue()
         labels = {
             "Catalog": "",
@@ -1959,8 +1856,8 @@ class Earthquake(LayerMenu, LayerParameters):
         text, opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
         self.parameter_catalog_source(opti, 1)
-        self.parameter_date(opti, 2, self.date_start, True)
-        self.parameter_date(opti, 3, self.date_end)
+        self.parameter_date(opti, 2)
+
         self.parameter_magnitude_range(opti, 4)
         self.parameter_depth_range(opti, 5)
         self.parameter_eq_size(opti, 6)
@@ -2002,6 +1899,19 @@ class Earthquake(LayerMenu, LayerParameters):
 
         button.place(relx=0.57, rely=0.87)
 
+    @staticmethod
+    def str2date(date_str: list[StringVar] | StringVar):
+        format = "%Y-%m-%d"
+        if isinstance(date_str, list):
+            date = [
+                datetime.strptime(item.get(), format)
+                for item in date_str
+                if type(item) == StringVar
+            ]
+        elif isinstance(date_str, StringVar):
+            date = datetime.strptime(date_str.get(), format)
+        return date
+
     def download_catalog(self):
         print("download start")
         self.download_button.configure(state=DISABLED)
@@ -2010,37 +1920,149 @@ class Earthquake(LayerMenu, LayerParameters):
             "ISC": isc_downloader,
             "USGS": usgs_downloader,
         }
+        catalog_file_name = f"{self.main.get_name.dir_name}_{self.catalog.get()}"
+        dates = Earthquake.str2date(self.dates)
         args = (
-            self.main.get_name.file_name.get(),
-            self.main.get_name.output_dir.get(),
+            catalog_file_name,
             self.main.get_coordinate.coord,
-            [self.date_start, self.date_end],
-            [self.mag_min, self.mag_max],
-            [self.dep_min, self.dep_max],
+            dates,
+            [self.magnitudes[0].get(), self.magnitudes[1].get()],
+            [self.depths[0].get(), self.depths[1].get()],
         )
-        self.threading_download(
-            server[self.catalog.get()], args, f"DL catalog {self.catalog.get()}"
+        source = server[self.catalog.get()]
+        print(source)
+        print(args)
+        self.download_thread = threading.Thread(
+            target=source, args=args, name=f"download {self.catalog.get()}"
         )
-
-    def threading_download(self, worker, args, name):
-        def thread_wrapper():
-            try:
-                worker(*args, self.download_queue)
-            except Exception as e:
-                self.download_queue.put(
-                    ("COMPLETE", False, f"Worker thread error: {e}")
-                )
-
-        self.download_thread = threading.Thread(target=thread_wrapper, name=name)
         self.download_thread.daemon = False
         self.download_thread.start()
 
-    @property
-    def script(self):
+    def parameter_catalog_source(self, opti, row, focmec=None):
+        catalog = ["USGS", "ISC", "GlobalCMT", "User supplied"]
+        if focmec is True:
+            cat = catalog[2:]
+        else:
+            cat = catalog[0:2] + catalog[3:]
+        self.catalog = StringVar(value=cat[0])
+        entry = ctk.CTkOptionMenu(
+            opti,
+            variable=self.catalog,
+            values=cat,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=cat,
+            command=lambda e: self.catalog.set(e),
+            width=200,
+            height=125,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+        entry.grid(column=0, row=row, columnspan=3, sticky="ew")
+
+    def parameter_date(self, frame: CTkFrame, row: int):
+        _start = datetime.now() - relativedelta(years=1)
+        _end = datetime.now()
+        date_start = DateEntry(frame, self.dates[0], _start)
+        date_end = DateEntry(frame, self.dates[1], _end)
+        date_start.grid(row=row, column=0, columnspan=5, sticky="ew")
+        date_end.grid(row=row + 1, column=0, columnspan=5, sticky="ew")
+
+    def parameter_magnitude_range(self, opti, row):
+
+        range = CTkRangeSlider(
+            opti,
+            variables=(self.magnitudes[0], self.magnitudes[1]),
+            from_=0,
+            to=10,
+            number_of_steps=100,
+            button_length=5,
+            height=10,
+            button_color="dim gray",
+        )
+        range.grid(column=1, row=row, columnspan=3, padx=5)
+        entry_mag_min = CTkEntry(opti, textvariable=self.magnitudes[0])
+        entry_mag_max = CTkEntry(opti, width=50, textvariable=self.magnitudes[1])
+
+        entry_mag_min.grid(column=0, row=row, sticky="ew", padx=5)
+        entry_mag_max.grid(column=4, row=row, sticky="ew")
+        label = CTkLabel(opti, text="M", anchor="w")
+        label.grid(column=5, row=row, sticky="w", padx=3)
+
+    def parameter_depth_range(self, opti, row):
+        range = CTkRangeSlider(
+            opti,
+            variables=self.depths,
+            from_=0,
+            to=1000,
+            number_of_steps=1000,
+            button_length=5,
+            height=10,
+            button_color="dim gray",
+        )
+        range.grid(column=1, row=row, columnspan=3, padx=5)
+        entry_dep_min = CTkEntry(opti, textvariable=self.depths[0])
+        entry_dep_max = CTkEntry(opti, width=50, textvariable=self.depths[1])
+        label = CTkLabel(opti, text="Km", anchor="w")
+        label.grid(column=5, row=row, sticky="w", padx=3)
+
+        entry_dep_min.grid(column=0, row=row, sticky="ew", padx=5)
+        entry_dep_max.grid(column=4, row=row)
+
+    def parameter_eq_size(self, opti, row):
+
+        slider_size = ctk.CTkSlider(
+            opti,
+            variable=self.circle_size,
+            from_=0,
+            to=4,
+            number_of_steps=40,
+            button_length=5,
+            height=10,
+            button_color="dim gray",
+            command=self.slider_callback,
+        )
+        entry = CTkEntry(opti, textvariable=self.circle_size)
+        entry.grid(column=4, row=row, columnspan=1)
+        slider_size.grid(column=1, row=row, columnspan=3)
+
+    def slider_callback(self, value):
+        self.circle_size.set(round(value, 1))
+
+    def parameter_fm_size(self):
         pass
 
+    @property
+    def eq_file(self):
+        file_name = f"{self.main.get_name.dir_name}_{self.catalog.get()}.txt"
+        return file_name
 
-class Focmec(LayerParameters):
+    @property
+    def script(self):
+        cpt_file = f"{self.main.get_name.dir_name}-depth.cpt"
+        eq_scaler = (
+            float(self.main.get_projection.proj_width.get())
+            * 0.0005
+            * self.circle_size.get()
+        )
+        real_eq_depth = find_min_max(self.eq_file, 2, trim=True)
+        real_eq_mag = find_min_max(self.eq_file, 3)
+        cpt_interval = round(real_eq_depth["trim_range"] / 6, 1)
+        min_ = real_eq_depth["trim_min"]
+        max_ = min_ + (cpt_interval * 6)
+        makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+        gmtmath = f"\tgmt math {self.eq_file} -C3 SQR {eq_scaler} MUL = | "
+        gmtplot = f"gmt plot -C{cpt_file} -Scc -Wfaint,grey30 -Ve \n"
+        return makecpt + gmtmath + gmtplot
+
+
+class Focmec:
     # tanggal awal
     # tanggal akhir
     # sumber katalog gcmt, user supplied
@@ -2054,7 +2076,7 @@ class Focmec(LayerParameters):
         pass
 
 
-class Tectonic(LayerParameters):
+class Tectonic:
     # source
     # ketebalan garis
     # warna garis
@@ -2066,7 +2088,7 @@ class Tectonic(LayerParameters):
         pass
 
 
-class Inset(LayerParameters):
+class Inset:
     # lokasi
     def __init__(self, tab):
         self.a = tab
@@ -2076,7 +2098,7 @@ class Inset(LayerParameters):
         pass
 
 
-class Legend(LayerParameters):
+class Legend:
     def __init__(self, tab):
 
         self.legend_eq = ctk.BooleanVar()
@@ -2093,7 +2115,7 @@ class Legend(LayerParameters):
         pass
 
 
-class Cosmetics(LayerParameters):
+class Cosmetics:
     """
     Title
     Subtitle

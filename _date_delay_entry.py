@@ -7,16 +7,16 @@ import calendar
 
 
 class DateEntry(ctk.CTkFrame):
-    def __init__(self, master=None, date=datetime.now(), **kwargs):
+    def __init__(self, master, textvar=None, date=datetime.now(), **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
 
         self.selected_date = date
 
         # Entry to display the date - REMOVE state="readonly"
-        self.date_entry = ctk.CTkEntry(self, width=90)
+        self.date_entry = ctk.CTkEntry(self, width=90, textvariable=textvar)
         self.date_entry.grid(row=0, column=0, padx=(0, 5))
         self.date_entry.insert(
-            0, self.selected_date.strftime("%Y/%m/%d")
+            0, self.selected_date.strftime("%Y-%m-%d")
         )  # Initial format YYYY/MM/DD
         self.validation_timer = None
         self.validation_delay_ms = 1500
@@ -89,12 +89,12 @@ class DateEntry(ctk.CTkFrame):
             self.calendar_popup = None
 
     def _update_entry_display(self, date_obj):
-        """Updates the date entry field with the given datetime object in YYYY/MM/DD format."""
+        """Updates the date entry field with the given datetime object in YYYY-MM-DD format."""
         # Temporarily make editable to update, then make readonly for safety (optional, but good practice)
         # However, since we want manual typing, we'll keep it editable.
         # Just update the text and ensure no error highlighting.
         self.date_entry.delete(0, ctk.END)
-        self.date_entry.insert(0, date_obj.strftime("%Y/%m/%d"))
+        self.date_entry.insert(0, date_obj.strftime("%Y-%m-%d"))
         self.date_entry.configure(
             fg_color=self.date_entry.cget("bg_color")
         )  # Reset background color if was red
@@ -123,7 +123,7 @@ class DateEntry(ctk.CTkFrame):
 
         try:
             # Attempt to parse the date in YYYY/MM/DD format
-            parsed_date = datetime.strptime(entered_date_str, "%Y/%m/%d")
+            parsed_date = datetime.strptime(entered_date_str, "%Y-%m-%d")
             self.selected_date = parsed_date
             self._update_entry_display(
                 self.selected_date
@@ -138,7 +138,7 @@ class DateEntry(ctk.CTkFrame):
             self.date_entry.configure(fg_color="red")  # Highlight error
             # Optionally, revert to the last valid date or clear the field
             # self._update_entry_display(self.selected_date) # Revert to last valid
-            print(f"Invalid date format: '{entered_date_str}'. Please use YYYY/MM/DD.")
+            print(f"Invalid date format: '{entered_date_str}'. Please use YYYY-MM-DD.")
 
     # --- End New ---
 

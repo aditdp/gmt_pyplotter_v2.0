@@ -1,42 +1,106 @@
-import os, subprocess, csv, math, threading
-from datetime import datetime, timedelta
+import os, subprocess, csv, math, threading, queue
+from datetime import datetime
 from dateutil import parser
 
 from urllib.request import urlretrieve, urlopen
 from PIL import Image
 
 
-def file_writer(
-    flag: str,
-    script_name_format: str,
-    text: str,
-    output_dir: str,
-):
-
-    with open(
-        os.path.join(output_dir, script_name_format), flag, encoding="utf-8"
-    ) as file:
+def file_writer(output_file: str, flag: str, text: str):
+    with open(output_file, flag, encoding="utf-8") as file:
         file.write(text)
 
 
-def is_file_empty(filepath, filename):
-    file = os.path.join(filepath, filename)
-    return os.path.getsize(file) == 0
+def file_is_not_empty(filename):
+    return os.path.getsize(filename) != 0
+
+
+def find_min_max(
+    filename: str,
+    column_index: int,
+    delimiter="\t",
+    trim=False,
+    date=False,
+):
+    """
+    Returns:
+    a dictionary:
+    {
+    "min" : minimum value
+    "max" : maximum value
+    "count" : total line count
+    "range" :  max - min
+    "trim_min" : minimum value of trimmed data (5 percent)
+    "trim_max" : maximum value of trimmed data (5 percent)
+    "trim_range" : trim_max - trim_min
+    """
+
+    line_count = 0
+    data = []
+
+    with open(filename, "r") as file:
+        for line in file:
+            values = line.strip().split(delimiter)
+            if date == False:
+                try:
+                    data.append(float(values[column_index]))
+                except (ValueError, IndexError):
+                    continue
+            if date == True:
+                try:
+                    data.append(parser.parse(values[column_index], ignoretz=True))
+                except (ValueError, IndexError):
+                    continue
+            line_count += 1
+    if line_count == 0:
+        return None
+    minimum = min(data)
+    maximum = max(data)
+    range = maximum - minimum
+    info = {
+        "min": minimum,
+        "max": maximum,
+        "count": line_count,
+        "range": range,
+    }
+    # min max value from trimmed 5 percent top and bottom of data
+    if trim == True:
+        trim_count = int(len(data) * (0.02))
+        sorted_data = sorted(data)
+        if trim_count == 0:
+            trimmed_data = sorted_data
+        else:
+            trimmed_data = sorted_data[trim_count:-trim_count]
+        trim_min = min(trimmed_data)
+        trim_max = max(trimmed_data)
+        trim_range = trim_max - trim_min
+
+        info = {
+            "min": minimum,
+            "max": maximum,
+            "count": line_count,
+            "range": range,
+            "trim_min": round(trim_min, -1),
+            "trim_max": round(trim_max, -1),
+            "trim_range": trim_range,
+        }
+        return info
+    return info
 
 
 def reorder_columns(input_file, output_file, new_order):
-    with open(input_file, "r", encoding="utf-8") as infile:
-        reader = csv.reader(infile)
+    with open(input_file, "r", encoding="utf-8") as input:
+        reader = csv.reader(input)
 
         # Write reordered columns to new file
-        with open(output_file, "w", newline="", encoding="utf-8") as outfile:
-            writer = csv.writer(outfile, delimiter="\t")
+        with open(output_file, "w", newline="", encoding="utf-8") as output:
+            writer = csv.writer(output, delimiter="\t")
             for row in reader:
                 reordered_row = [row[i].strip() for i in new_order]
                 writer.writerow(reordered_row)
 
 
-def gcmt_downloader(fm_file, file_path, coord, date: list[datetime], mag, depth):
+def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth):
 
     url_gcmt = "https://www.globalcmt.org/cgi-bin/globalcmt-cgi-bin/CMT5/form?itype=ymd&yr={}&mo={}&day={}&otype=nd&nday={}&lmw={}&umw={}&llat={}&ulat={}&llon={}&ulon={}&lhd={}&uhd={}&list=6".format(
         date[0].strftime("%Y"),
@@ -62,11 +126,11 @@ def gcmt_downloader(fm_file, file_path, coord, date: list[datetime], mag, depth)
     print("data acquired..")
     # input("press any key to continue..")
     print(data_gcmt)
-    file_writer("w", f"{fm_file[0:-4]}_ORI.txt", data_gcmt, file_path)
-    if is_file_empty(file_path, f"{fm_file[0:-4]}_ORI.txt") == False:
+    file_writer(f"{dir_name}_ORI.txt", "w", data_gcmt)
+    if file_is_not_empty(f"{dir_name}_ORI.txt"):
         add_mag_to_meca_file(
-            os.path.join(file_path, f"{fm_file[0:-4]}_ORI.txt"),
-            os.path.join(file_path, fm_file),
+            f"{dir_name}_ORI.txt",
+            f"{dir_name}.txt",
         )
 
         print("done..")
@@ -124,23 +188,30 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 print(f"    Error processing row: {row}. Error: {e}")
 
 
-def usgs_downloader(
-    eq_file: str, file_path: str, coord, date: list[datetime], mag, depth
-):
+def usgs_downloader(dir_name: str, coord, date: list[datetime], mag, depth):
+    print("download usgs catalog")
+    print(f"file path = {dir_name}")
+    print(f"coord= {coord}")
+    print(f"date = {date}")
+    print(f"mag={mag}")
+    print(f"depth={depth}")
+    _start = date[0].strftime("%Y-%m-%d")
+    _end = date[1].strftime("%Y-%m-%d")
     url_usgs = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv"
     url_loc = f"minlongitude={coord[0]}&maxlongitude={coord[1]}&minlatitude={coord[2]}&maxlatitude={coord[3]}"
-    url_date = f"starttime={date[0]}&endtime={date[1]}"
+    url_date = f"starttime={_start}&endtime={_end}"
     url_mag = f"minmagnitude={mag[0]}&maxmagnitude={mag[1]}"
     url_dep = f"mindepth={depth[0]}&maxdepth={depth[1]}"
     url = f"{url_usgs}&{url_date}&{url_loc}&{url_mag}&{url_dep}"
+    print(url)
     print(f"\nRetrieving data from: {url}")
     print("\n    This may take a while...")
-    urlretrieve(url, os.path.join(file_path, f"{eq_file[0:-4]}_ORI.txt"))
-    if is_file_empty(file_path, f"{eq_file[0:-4]}_ORI.txt") == False:
+    urlretrieve(url, f"{dir_name}_ORI.txt")
+    if file_is_not_empty(f"{dir_name}_ORI.txt"):
 
         reorder_columns(
-            os.path.join(file_path, f"{eq_file[0:-4]}_ORI.txt"),
-            os.path.join(file_path, eq_file),
+            f"{dir_name}_ORI.txt",
+            f"{dir_name}.txt",
             [2, 1, 3, 4, 0],
         )
         print("\n Done.. \n")
@@ -151,7 +222,7 @@ def usgs_downloader(
     return status
 
 
-def isc_downloader(eq_file, file_path, coord, date: list[datetime], mag, depth):
+def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
 
     url_isc = "https://www.isc.ac.uk/cgi-bin/web-db-run?request=COMPREHENSIVE&out_format=CATCSV&searchshape=RECT"
 
@@ -176,7 +247,7 @@ def isc_downloader(eq_file, file_path, coord, date: list[datetime], mag, depth):
         mag[1],
     )
     url = url_isc + url_loc + url_date + url_dep
-    print(f"\nEq data save as {eq_file}\n")
+    print(f"\nEq data save as {dir_name}\n")
     # input("pause")
     print(f"retrieving data from:\n{url}")
     print("\n\nMay be take some time ..")
@@ -188,11 +259,11 @@ def isc_downloader(eq_file, file_path, coord, date: list[datetime], mag, depth):
     print("data acquired..")
     # input("press any key to continue..")
     # print(data_isc)
-    file_writer("w", f"{eq_file[0:-4]}_ORI.txt", data_isc, file_path)
-    if is_file_empty(file_path, f"{eq_file[0:-4]}_ORI.txt") == False:
+    file_writer(f"{dir_name}_ORI.txt", "w", data_isc)
+    if file_is_not_empty(f"{dir_name}_ORI.txt"):
         reorder_columns(
-            os.path.join(file_path, f"{eq_file[0:-4]}_ORI.txt"),
-            os.path.join(file_path, eq_file),
+            f"{dir_name}_ORI.txt",
+            f"{dir_name}.txt",
             [6, 5, 7, 11, 3, 4],
         )
         print("done..")
@@ -343,17 +414,17 @@ def recommend_contour_interval(map_scale_factor, min_value, max_value):
 
 
 RECOMMENDED_DEM_RESOLUTION_MAP = {
-    2000: "01s",
-    7500: "03s",
-    15000: "15s",
-    35000: "30s",
-    75000: "01m",
-    150000: "02m",
-    250000: "03m",
-    500000: "05m",
-    1000000: "10m",
-    2500000: "15m",
-    5000000: "30m",
+    50000: "01s",
+    150000: "03s",
+    700000: "15s",
+    2000000: "30s",
+    4000000: "01m",
+    6000000: "02m",
+    8000000: "03m",
+    10000000: "05m",
+    12500000: "10m",
+    25000000: "15m",
+    50000000: "30m",
     float("inf"): "01d",
 }
 
