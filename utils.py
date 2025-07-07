@@ -1,8 +1,9 @@
 import os, subprocess, csv, math, threading, queue
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil import parser
-
+from typing import Union, Dict, Any
 from urllib.request import urlretrieve, urlopen
+from urllib.error import URLError
 from PIL import Image
 
 
@@ -15,98 +16,274 @@ def file_is_not_empty(filename):
     return os.path.getsize(filename) != 0
 
 
-def find_min_max(
-    filename: str,
-    column_index: int,
-    delimiter="\t",
-    trim=False,
-    date=False,
-):
-    """
-    Returns:
-    a dictionary:
-    {
-    "min" : minimum value
-    "max" : maximum value
-    "count" : total line count
-    "range" :  max - min
-    "trim_min" : minimum value of trimmed data (5 percent)
-    "trim_max" : maximum value of trimmed data (5 percent)
-    "trim_range" : trim_max - trim_min
-    """
+# def find_min_max(
+#     filename: str,
+#     column_index: int,
+#     delimiter="\t",
+#     trim=False,
+#     date=False,
+# ):
+#     """
+#     Returns:
+#     a dictionary:
+#     {
+#     "min" : minimum value
+#     "max" : maximum value
+#     "count" : total line count
+#     "range" :  max - min
+#     "trim_min" : minimum value of trimmed data (5 percent)
+#     "trim_max" : maximum value of trimmed data (5 percent)
+#     "trim_range" : trim_max - trim_min
+#     """
 
-    line_count = 0
-    data = []
+#     line_count = 0
+#     data: list[float | datetime] = []
 
-    with open(filename, "r") as file:
-        for line in file:
-            values = line.strip().split(delimiter)
-            if date == False:
-                try:
-                    data.append(float(values[column_index]))
-                except (ValueError, IndexError):
-                    continue
-            if date == True:
-                try:
-                    data.append(parser.parse(values[column_index], ignoretz=True))
-                except (ValueError, IndexError):
-                    continue
-            line_count += 1
-    if line_count == 0:
-        return None
-    minimum = min(data)
-    maximum = max(data)
-    range = maximum - minimum
-    info = {
-        "min": minimum,
-        "max": maximum,
-        "count": line_count,
-        "range": range,
-    }
-    # min max value from trimmed 5 percent top and bottom of data
-    if trim == True:
-        trim_count = int(len(data) * (0.02))
-        sorted_data = sorted(data)
-        if trim_count == 0:
-            trimmed_data = sorted_data
-        else:
-            trimmed_data = sorted_data[trim_count:-trim_count]
-        trim_min = min(trimmed_data)
-        trim_max = max(trimmed_data)
-        trim_range = trim_max - trim_min
+#     with open(filename, "r") as file:
+#         for line in file:
+#             values = line.strip().split(delimiter)
+#             if date == False:
+#                 try:
+#                     data.append(float(values[column_index]))
+#                 except (ValueError, IndexError):
+#                     continue
+#             if date == True:
+#                 try:
+#                     data.append(parser.parse(values[column_index], ignoretz=True))
+#                 except (ValueError, IndexError):
+#                     continue
+#             line_count += 1
+#     if line_count == 0:
+#         return None
+#     minimum = min(data)
+#     maximum = max(data)
+#     range = maximum - minimum
+#     info = {
+#         "min": minimum,
+#         "max": maximum,
+#         "count": line_count,
+#         "range": range,
+#     }
+#     # min max value from trimmed 5 percent top and bottom of data
+#     if trim:
+#         trim_count = int(len(data) * (0.02))
+#         sorted_data = sorted(data)
+#         if trim_count == 0:
+#             trimmed_data = sorted_data
+#         else:
+#             trimmed_data = sorted_data[trim_count:-trim_count]
+#         trim_min = min(trimmed_data)
+#         trim_max = max(trimmed_data)
+#         trim_range = trim_max - trim_min
 
-        info = {
-            "min": minimum,
-            "max": maximum,
-            "count": line_count,
-            "range": range,
-            "trim_min": round(trim_min, -1),
-            "trim_max": round(trim_max, -1),
-            "trim_range": trim_range,
-        }
-        return info
-    return info
+
+#         info = {
+#             "min": minimum,
+#             "max": maximum,
+#             "count": line_count,
+#             "range": range,
+#             "trim_min": round(trim_min, -1),
+#             "trim_max": round(trim_max, -1),
+#             "trim_range": trim_range,
+#         }
+#         return info
+#     return info
 
 
 def reorder_columns(input_file, output_file, new_order):
-    with open(input_file, "r", encoding="utf-8") as input:
-        reader = csv.reader(input)
+    with open(input_file, "r", encoding="utf-8") as infile:
+        reader = csv.reader(infile)
 
         # Write reordered columns to new file
-        with open(output_file, "w", newline="", encoding="utf-8") as output:
-            writer = csv.writer(output, delimiter="\t")
+        with open(output_file, "w", newline="", encoding="utf-8") as outfile:
+            writer = csv.writer(outfile, delimiter="\t")
             for row in reader:
                 reordered_row = [row[i].strip() for i in new_order]
                 writer.writerow(reordered_row)
 
 
+def find_numeric_stats(
+    filename: str,
+    column_index: int,
+    delimiter: str = "\t",
+    trim_percentage: float = 0.05,
+) -> dict[str, float | int] | None:
+    """
+    Analyzes a specified column in a delimited file to find min, max, count, and range
+    for numeric (float) data.
+    Optionally, it can also calculate these statistics for trimmed data (removing a
+    percentage from both ends).
+
+    Args:
+        filename (str): The path to the input file.
+        column_index (int): The 0-based index of the column to analyze.
+        delimiter (str, optional): The delimiter used in the file. Defaults to "\\t".
+        trim_percentage (float, optional): The percentage of data to trim from EACH end
+                                            (e.g., 0.05 for 5% from top and 5% from bottom).
+                                            Defaults to 0.05.
+
+    Returns:
+        dict: A dictionary containing the following numeric statistics:
+                - "min": Minimum float value
+                - "max": Maximum float value
+                - "count": Total number of lines processed
+                - "range": max - min
+                - "trim_min": Minimum value of trimmed data (if applicable)
+                - "trim_max": Maximum value of trimmed data (if applicable)
+                - "trim_range": trim_max - trim_min (if applicable)
+        None: If the file is empty, no valid numeric data could be parsed, or the
+                specified column is out of bounds for all lines.
+    """
+
+    line_count = 0.0
+    data: list[float] = []
+
+    try:
+        with open(filename, "r") as file:
+            for line in file:
+                line_count += 1.0
+                values = line.strip().split(delimiter)
+
+                if column_index >= len(values):
+                    continue  # Skip lines that don't have enough columns
+
+                try:
+                    # Attempt to parse as float
+                    num_val = float(values[column_index].strip())
+                    data.append(num_val)
+                except ValueError:
+                    # Skip lines that cannot be converted to float
+                    continue
+    except FileNotFoundError:
+        print(f"Error: File '{filename}' not found.")
+        return None
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+        return None
+
+    if not data:  # Check if any numeric data was successfully parsed
+        return None
+
+    minimum = min(data)
+    maximum = max(data)
+    full_range = maximum - minimum
+
+    info = {
+        "min": minimum,
+        "max": maximum,
+        "count": line_count,
+        "range": full_range,
+    }
+
+    # Trimming logic for numeric data
+    if trim_percentage > 0:  # Only apply trim if percentage is positive
+        trim_elements_count = int(len(data) * trim_percentage)
+        sorted_data = sorted(data)
+
+        if len(sorted_data) < 2 * trim_elements_count + 1:
+            trimmed_data = sorted_data  # No effective trimming
+            print(
+                f"Warning: Not enough data points ({len(data)}) to trim {trim_percentage*100}% from each end. No trimming applied."
+            )
+        else:
+            trimmed_data = sorted_data[trim_elements_count:-trim_elements_count]
+
+        if not trimmed_data:
+            print(
+                "Warning: Trimmed data is empty after potential trimming. Cannot calculate trim_min/max/range."
+            )
+        else:
+            trim_min = min(trimmed_data)
+            trim_max = max(trimmed_data)
+            trim_range = trim_max - trim_min
+
+            info.update(
+                {
+                    "trim_min": round(trim_min, -1),
+                    "trim_max": round(trim_max, -1),
+                    "trim_range": trim_range,
+                }
+            )
+
+    return info
+
+
+def find_datetime_stats(
+    filename: str,
+    column_index: int,
+    delimiter: str = "\t",
+) -> Union[Dict[str, Union[datetime, timedelta, int]], None]:
+    """
+    Analyzes a specified column in a delimited file to find min, max, count, and range
+    for datetime data. Trimming is not supported for datetime data.
+
+    Args:
+        filename (str): The path to the input file.
+        column_index (int): The 0-based index of the column to analyze.
+        delimiter (str, optional): The delimiter used in the file. Defaults to "\\t".
+
+    Returns:
+        dict: A dictionary containing the following datetime statistics:
+              - "min": Minimum datetime value
+              - "max": Maximum datetime value
+              - "count": Total number of lines processed
+              - "range": max - min (a timedelta object)
+        None: If the file is empty, no valid datetime data could be parsed, or the
+              specified column is out of bounds for all lines.
+    """
+
+    line_count = 0
+    data: list[datetime] = []
+
+    try:
+        with open(filename, "r") as file:
+            for line in file:
+                line_count += 1
+                values = line.strip().split(delimiter)
+
+                if column_index >= len(values):
+                    continue  # Skip lines that don't have enough columns
+
+                try:
+                    # Attempt to parse as datetime
+                    date_val = parser.parse(values[column_index].strip(), ignoretz=True)
+                    data.append(date_val)
+                except (ValueError, parser.ParserError):
+                    # Skip lines that cannot be converted to datetime
+                    continue
+    except FileNotFoundError:
+        print(f"Error: File '{filename}' not found.")
+        return None
+    except Exception as e:
+        print(f"An error occurred while reading the file: {e}")
+        return None
+
+    if not data:  # Check if any datetime data was successfully parsed
+        return None
+
+    minimum = min(data)
+    maximum = max(data)
+    full_range = maximum - minimum  # This naturally results in a timedelta
+
+    info = {
+        "min": minimum,
+        "max": maximum,
+        "count": line_count,
+        "range": full_range,
+    }
+
+    return info
+
+
 def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth):
 
-    url_gcmt = "https://www.globalcmt.org/cgi-bin/globalcmt-cgi-bin/CMT5/form?itype=ymd&yr={}&mo={}&day={}&otype=nd&nday={}&lmw={}&umw={}&llat={}&ulat={}&llon={}&ulon={}&lhd={}&uhd={}&list=6".format(
+    url_gcmt = "https://www.globalcmt.org/cgi-bin/globalcmt-cgi-bin/CMT5/form?itype=ymd&yr={}&mo={}&day={}&otype=ymd&oyr={}&omo={}&oday={}&lmw={}&umw={}&llat={}&ulat={}&llon={}&ulon={}&lhd={}&uhd={}&list=6".format(
         date[0].strftime("%Y"),
         date[0].strftime("%m"),
         date[0].strftime("%d"),
-        date[2],
+        date[1].strftime("%Y"),
+        date[1].strftime("%m"),
+        date[1].strftime("%d"),
         mag[0],
         mag[1],
         coord[2],
@@ -118,27 +295,31 @@ def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth):
     )
 
     print(f"  retrieving data from:\n {url_gcmt}")
-    page = urlopen(url_gcmt)
-    html = page.read().decode("utf-8")
-    start_index = html.rfind("<pre>") + 6
-    end_index = html.rfind("</pre>")
-    data_gcmt = html[start_index:end_index]
-    print("data acquired..")
-    # input("press any key to continue..")
-    print(data_gcmt)
-    file_writer(f"{dir_name}_ORI.txt", "w", data_gcmt)
-    if file_is_not_empty(f"{dir_name}_ORI.txt"):
-        add_mag_to_meca_file(
-            f"{dir_name}_ORI.txt",
-            f"{dir_name}.txt",
-        )
+    try:
+        page = urlopen(url_gcmt)
+        html = page.read().decode("utf-8")
+        start_index = html.rfind("<pre>") + 6
+        end_index = html.rfind("</pre>")
+        data_gcmt = html[start_index:end_index]
+        print("data acquired..")
+        # input("press any key to continue..")
+        print(data_gcmt)
+        file_writer(f"{dir_name}_ORI.txt", "w", data_gcmt)
+        if file_is_not_empty(f"{dir_name}_ORI.txt"):
+            add_mag_to_meca_file(
+                f"{dir_name}_ORI.txt",
+                f"{dir_name}.txt",
+            )
 
-        print("done..")
-        status = "good"
-    else:
-        print("   No earthquake event found..")
-        status = "empty"
-    return status
+            print("done..")
+            status = "good"
+        else:
+            print("   No earthquake event found..")
+            status = "empty"
+        return status
+    except URLError:
+        print("Cannot connect to GlobalCMT data server..")
+        print("Check your internet connection!")
 
 
 def calculate_mw(mrr, mtt, mpp, mrt, mrp, mtp, iexp):
@@ -188,7 +369,13 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 print(f"    Error processing row: {row}. Error: {e}")
 
 
-def usgs_downloader(dir_name: str, coord, date: list[datetime], mag, depth):
+def usgs_downloader(
+    dir_name: str,
+    coord,
+    date: list[datetime],
+    mag,
+    depth,
+):
     print("download usgs catalog")
     print(f"file path = {dir_name}")
     print(f"coord= {coord}")
@@ -206,20 +393,24 @@ def usgs_downloader(dir_name: str, coord, date: list[datetime], mag, depth):
     print(url)
     print(f"\nRetrieving data from: {url}")
     print("\n    This may take a while...")
-    urlretrieve(url, f"{dir_name}_ORI.txt")
-    if file_is_not_empty(f"{dir_name}_ORI.txt"):
+    try:
+        urlretrieve(url, f"{dir_name}_ORI.txt")
+        if file_is_not_empty(f"{dir_name}_ORI.txt"):
 
-        reorder_columns(
-            f"{dir_name}_ORI.txt",
-            f"{dir_name}.txt",
-            [2, 1, 3, 4, 0],
-        )
-        print("\n Done.. \n")
-        status = "good"
-    else:
-        print("   No earthquake event found..")
-        status = "empty"
-    return status
+            reorder_columns(
+                f"{dir_name}_ORI.txt",
+                f"{dir_name}.txt",
+                [2, 1, 3, 4, 0],
+            )
+            print("\n Done.. \n")
+            status = "good"
+        else:
+            print("   No earthquake event found..")
+            status = "empty"
+        return status
+    except URLError:
+        print("Cannot connect to USGS data server..")
+        print("Check your internet connection!")
 
 
 def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
@@ -251,27 +442,31 @@ def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
     # input("pause")
     print(f"retrieving data from:\n{url}")
     print("\n\nMay be take some time ..")
-    page = urlopen(url)
-    html = page.read().decode("utf-8")
-    start_index = html.rfind("EVENTID") - 2
-    end_index = html.rfind("STOP") - 1
-    data_isc = html[start_index:end_index]
-    print("data acquired..")
-    # input("press any key to continue..")
-    # print(data_isc)
-    file_writer(f"{dir_name}_ORI.txt", "w", data_isc)
-    if file_is_not_empty(f"{dir_name}_ORI.txt"):
-        reorder_columns(
-            f"{dir_name}_ORI.txt",
-            f"{dir_name}.txt",
-            [6, 5, 7, 11, 3, 4],
-        )
-        print("done..")
-        status = "good"
-    else:
-        print("   No earthquake event found..")
-        status = "empty"
-    return status
+    try:
+        page = urlopen(url)
+        html = page.read().decode("utf-8")
+        start_index = html.rfind("EVENTID") - 2
+        end_index = html.rfind("STOP") - 1
+        data_isc = html[start_index:end_index]
+        print("data acquired..")
+        # input("press any key to continue..")
+        # print(data_isc)
+        file_writer(f"{dir_name}_ORI.txt", "w", data_isc)
+        if file_is_not_empty(f"{dir_name}_ORI.txt"):
+            reorder_columns(
+                f"{dir_name}_ORI.txt",
+                f"{dir_name}.txt",
+                [6, 5, 7, 11, 3, 4],
+            )
+            print("done..")
+            status = "good"
+        else:
+            print("   No earthquake event found..")
+            status = "empty"
+        return status
+    except URLError:
+        print("Cannot connect to ISC data server..")
+        print("Check your internet connection!")
 
 
 match os.name:

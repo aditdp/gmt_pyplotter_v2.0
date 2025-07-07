@@ -588,9 +588,11 @@ class LayerMenu(ctk.CTkFrame):
                 print("contour deleted")
             case "Earthquake plot":
                 if hasattr(self, "earthquake") and self.earthquake is not None:
+                    self.earthquake.remove_tracers()
                     del self.earthquake
             case "Focal mechanism":
                 if hasattr(self, "focmec") and self.focmec is not None:
+                    self.focmec.remove_tracers()
                     del self.focmec
             case "Regional tectonics":
                 if hasattr(self, "tectonics") and self.tectonics is not None:
@@ -625,7 +627,7 @@ class LayerMenu(ctk.CTkFrame):
             case "Earthquake plot":
                 self.earthquake = Earthquake(new_layer, self.main)
             case "Focal mechanism":
-                self.focmec = Focmec(new_layer)
+                self.focmec = Focmec(new_layer, self.main)
             case "Regional tectonics":
                 self.tectonics = Tectonic(new_layer)
             case "Map inset":
@@ -847,30 +849,61 @@ class MapPreview:
 
             get_layers = self.main.get_layers
             prev_script.write(f"gmt begin preview_{fname} {exten}\n")
-            prev_script.write(f"\tgmt basemap {bounds} -JM20c  -Ba\n")
-            for layer in get_layers.layers:
-                match layer:
-                    case "Coastal line":
-                        script = get_layers.coast.script
-                    case "Earth relief":
-                        script = get_layers.grdimage.script
-                    case "Contour line":
-                        script = get_layers.contour.script
-                    case "Earthquake plot":
-                        script = get_layers.earthquake.script
-                    case "Focal mechanism":
-                        script = get_layers.focmec.script
-                    case "Regional tectonics":
-                        script = get_layers.tectonics.script
-                    case "Map inset":
-                        script = get_layers.inset.script
-                    case "Legend":
-                        script = get_layers.legend.script
-                    case "Cosmetics":
-                        script = get_layers.cosmetics.script
-                    case _:
-                        script = ""
+            prev_script.write(
+                f"\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
+            )
+            prev_script.write(f"\tgmt basemap {bounds} -JM20c  -Ba+e\n")
+            if "Coastal line" in get_layers.layers:
+                script = get_layers.coast.script
                 prev_script.write(f"\t{script}\n")
+            if "Earth relief" in get_layers.layers:
+                script = get_layers.grdimage.script
+                prev_script.write(f"\t{script}\n")
+            if "Contour line" in get_layers.layers:
+                script = get_layers.contour.script
+                prev_script.write(f"\t{script}\n")
+            if "Earthquake plot" in get_layers.layers:
+                script = get_layers.earthquake.script
+                prev_script.write(f"\t{script}\n")
+            if "Focal mechanism" in get_layers.layers:
+                script = get_layers.focmec.script
+                prev_script.write(f"\t{script}\n")
+            if "Regional tectonics" in get_layers.layers:
+                script = get_layers.tectonics.script
+                prev_script.write(f"\t{script}\n")
+            if "Map inset" in get_layers.layers:
+                script = get_layers.inset.script
+                prev_script.write(f"\t{script}\n")
+            if "Legend" in get_layers.layers:
+                script = get_layers.legend.script
+                prev_script.write(f"\t{script}\n")
+            if "Cosmetics" in get_layers.layers:
+                script = get_layers.cosmetics.script
+                prev_script.write(f"\t{script}\n")
+
+                # for layer in get_layers.layers:
+                # match layer:
+                #     case "Coastal line":
+                #         script = get_layers.coast.script
+                #     case "Earth relief":
+                #         script = get_layers.grdimage.script
+                #     case "Contour line":
+                #         script = get_layers.contour.script
+                #     case "Earthquake plot":
+                #         script = get_layers.earthquake.script
+                #     case "Focal mechanism":
+                #         script = get_layers.focmec.script
+                #     case "Regional tectonics":
+                #         script = get_layers.tectonics.script
+                #     case "Map inset":
+                #         script = get_layers.inset.script
+                #     case "Legend":
+                #         script = get_layers.legend.script
+                #     case "Cosmetics":
+                #         script = get_layers.cosmetics.script
+                #     case _:
+                #         script = ""
+                # prev_script.write(f"\t{script}\n")
             prev_script.write(f"gmt end\n")
 
     def threading_process(self, worker, args, name, refresh=False):
@@ -1839,7 +1872,7 @@ class Earthquake(LayerMenu):
     def __init__(self, tab, main: MainApp):
         self.main = main
         self.eq_catalog = StringVar(tab, value="USGS")
-        self.dates = [StringVar(), StringVar()]
+        self.dates = (StringVar(), StringVar())
         self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = ctk.DoubleVar(tab, 1)
@@ -1851,7 +1884,6 @@ class Earthquake(LayerMenu):
             "Magnitude": "",
             "Depth": "",
             "Size": "",
-            # "Different Annotated Contour Line": "",
         }
         text, opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
@@ -1863,7 +1895,25 @@ class Earthquake(LayerMenu):
         self.parameter_eq_size(opti, 6)
         self.button_downloader(tab)
         self.button_show_catalog(tab)
-        self.main.after(100, self._check_queue)
+        self.add_tracers()
+        # self.main.after(100, self._check_queue)
+
+    def add_tracers(self):
+        self.prev_coord = set()
+        self.trace_handlers = []
+        to_trace = [self.dates, self.magnitudes, self.depths]
+        for i in to_trace:
+            for var in i:
+                trace_id = var.trace_add("write", self.set_button_download)
+                self.trace_handlers.append((var, trace_id))
+
+    def remove_tracers(self):
+        for var, trace_id in self.trace_handlers:
+            try:
+                var.trace_remove("write", trace_id)
+                print("trace {trace_id} from {var} removed")
+            except TclError as e:
+                print(f"error removing trace {trace_id} from {var}: {e}")
 
     def _check_queue(self):
         try:
@@ -1876,6 +1926,19 @@ class Earthquake(LayerMenu):
             pass
 
         self.main.after(100, self._check_queue)
+
+    def roi_changes_check(self):
+        for r in roi:
+            self.prev_coord.add(r.get())
+
+        if len(self.prev_coord) != 4:
+            self.prev_coord = set([r.get() for r in roi])
+            self.download_button.configure(state=NORMAL)
+        self.main.after(100, self.roi_changes_check)
+
+    def set_button_download(self, *_):
+        if self.download_button.cget("state") == DISABLED:
+            self.download_button.configure(state=NORMAL)
 
     def button_downloader(self, tab):
         self.download_button = CTkButton(
@@ -1900,9 +1963,9 @@ class Earthquake(LayerMenu):
         button.place(relx=0.57, rely=0.87)
 
     @staticmethod
-    def str2date(date_str: list[StringVar] | StringVar):
+    def str2date(date_str: tuple[StringVar, StringVar] | StringVar):
         format = "%Y-%m-%d"
-        if isinstance(date_str, list):
+        if isinstance(date_str, tuple):
             date = [
                 datetime.strptime(item.get(), format)
                 for item in date_str
@@ -1915,6 +1978,7 @@ class Earthquake(LayerMenu):
     def download_catalog(self):
         print("download start")
         self.download_button.configure(state=DISABLED)
+        self.roi_changes_check()
         server = {
             "GlobalCMT": gcmt_downloader,
             "ISC": isc_downloader,
@@ -1929,6 +1993,7 @@ class Earthquake(LayerMenu):
             [self.magnitudes[0].get(), self.magnitudes[1].get()],
             [self.depths[0].get(), self.depths[1].get()],
         )
+
         source = server[self.catalog.get()]
         print(source)
         print(args)
@@ -2035,9 +2100,6 @@ class Earthquake(LayerMenu):
     def slider_callback(self, value):
         self.circle_size.set(round(value, 1))
 
-    def parameter_fm_size(self):
-        pass
-
     @property
     def eq_file(self):
         file_name = f"{self.main.get_name.dir_name}_{self.catalog.get()}.txt"
@@ -2051,9 +2113,11 @@ class Earthquake(LayerMenu):
             * 0.0005
             * self.circle_size.get()
         )
-        real_eq_depth = find_min_max(self.eq_file, 2, trim=True)
-        real_eq_mag = find_min_max(self.eq_file, 3)
-        cpt_interval = round(real_eq_depth["trim_range"] / 6, 1)
+        real_eq_depth = find_numeric_stats(self.eq_file, 2)
+        if real_eq_depth is None:
+            return
+        # real_eq_mag = find_min_max(self.eq_file, 3)
+        cpt_interval = round(real_eq_depth["trim_range"] / 6, -1)
         min_ = real_eq_depth["trim_min"]
         max_ = min_ + (cpt_interval * 6)
         makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
@@ -2062,18 +2126,62 @@ class Earthquake(LayerMenu):
         return makecpt + gmtmath + gmtplot
 
 
-class Focmec:
+class Focmec(Earthquake):
     # tanggal awal
     # tanggal akhir
     # sumber katalog gcmt, user supplied
     # minmax magnitude
     # minmax depth
-    def __init__(self, tab):
-        self.a = tab
+    def __init__(self, tab, main: MainApp):
+        self.main = main
+        self.eq_catalog = StringVar(tab, value="USGS")
+        self.dates = (StringVar(), StringVar())
+        self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
+        self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
+        self.circle_size = ctk.DoubleVar(tab, 1)
+        self.download_queue = queue.Queue()
+        labels = {
+            "Catalog": "",
+            "Start date": "",
+            "End date": "",
+            "Magnitude": "",
+            "Depth": "",
+            "Size": "",
+        }
+        text, opti = self.tab_menu_layout_divider(tab)
+        self.parameter_labels(text, labels)
+        self.parameter_catalog_source(opti, 1, focmec=True)
+        self.parameter_date(opti, 2)
+
+        self.parameter_magnitude_range(opti, 4)
+        self.parameter_depth_range(opti, 5)
+        self.parameter_eq_size(opti, 6)
+        self.button_downloader(tab)
+        self.button_show_catalog(tab)
+        self.add_tracers()
+        # self.main.after(100, self._check_queue)
 
     @property
     def script(self):
-        pass
+        cpt_file = f"{self.main.get_name.dir_name}-depth.cpt"
+        fm_scaler = (
+            float(self.main.get_projection.proj_width.get())
+            * 0.025
+            * self.circle_size.get()
+        )
+        real_fm_depth = find_numeric_stats(self.eq_file, 2)
+        if real_fm_depth is None:
+            return
+        makecpt = ""
+        if not hasattr(self.main.get_layers, "earthquake"):
+            cpt_interval = round(real_fm_depth["range"] / 6, -1)
+            print(f"cpt interval ={cpt_interval}")
+            min_ = round(real_fm_depth["min"], -1)
+            max_ = min_ + (cpt_interval * 6)
+            print(f"min = {min_}")
+            print(f"max = {max_}")
+            makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+        return f"{makecpt}\tgmt meca {self.eq_file} -Sd{fm_scaler}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
 
 
 class Tectonic:
