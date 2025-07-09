@@ -1,7 +1,7 @@
 from PIL import Image
 
 # Load the image and ensure it has an alpha channel for transparency
-input = "light_refresh.png"
+input = "light_eyedropper.png"
 
 img = Image.open(input).convert("RGBA")
 
@@ -14,7 +14,7 @@ for item in datas:
         item[0] < 50 and item[1] < 50 and item[2] < 50 and item[3] != 0
     ):  # Check for black with any alpha except fully transparent
         new_data.append(
-            (255, 255, 255, item[3])
+            (100, 100, 100, item[3])
         )  # Replace with white while preserving transparency
     else:
         new_data.append(item)
@@ -23,4 +23,4 @@ for item in datas:
 img.putdata(new_data)
 
 # Save the new image
-img.save(f"dark_{input}", "PNG")
+img.save(f"off_{input}", "PNG")

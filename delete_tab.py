@@ -43,17 +43,6 @@ else:
     scalefactor = 1
 
 
-# def run_in_thread(func):
-#     @wraps(func)
-#     def wrapper(*args, **kwargs):
-#         thread = threading.Thread(target=func, args=args, kwargs=kwargs)
-#         thread.daemon = True
-#         thread.start()
-#         return thread
-
-#     return wrapper
-
-
 class MainApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -494,24 +483,28 @@ class MapProjection(CTkFrame):
         return width * 111.11 / (int(self.proj_width.get()) * 0.00001)
 
 
-class LayerMenu(ctk.CTkFrame):
+class LayerMenu:
     def __init__(self, main: MainApp, mainframe):
-        super().__init__(mainframe)
+        # super().__init__(mainframe)
         self.main = main
-        self.place(x=0, y=0, relwidth=1, relheight=1)
-        self.button_frame = CTkFrame(self, fg_color="transparent")
-        self.button_frame.pack(pady=10, fill="x")
+        # self.place(x=0, y=0, relwidth=1, relheight=1)
+        self.button_frame = CTkFrame(
+            mainframe, fg_color="transparent", width=490, height=10
+        )
+        self.button_frame.pack(side="top", pady=0, fill="both", expand=True)
 
         self.layer_control = ctk.CTkTabview(
-            self,
+            mainframe,
             segmented_button_selected_color="SpringGreen4",
             segmented_button_selected_hover_color="OliveDrab4",
             text_color_disabled="coral",
             segmented_button_unselected_color="dim grey",
             segmented_button_unselected_hover_color="honeydew4",
             anchor="w",
+            height=490,
+            width=490,
         )
-        self.layer_control.pack(expand=1, fill="both")
+        self.layer_control.pack(side="top", expand=1, fill="both", padx=(0, 5))
 
         self.layers = []
         self.add_remove_layer()
@@ -611,7 +604,12 @@ class LayerMenu(ctk.CTkFrame):
     def add_tab(self, choice):
         # tab_name = f"{len(self.tabs)+1}. {choice}"
         layer = choice
-        new_layer = self.layer_control.add(layer)
+        try:
+            new_layer = self.layer_control.add(layer)
+        except ValueError:
+            message = f"Already has tab '{layer}'"
+            messagebox.showerror("Tab Add Error", message)
+            return
         self.layers.append(layer)
 
         self.layer_control.set(layer)
@@ -629,9 +627,9 @@ class LayerMenu(ctk.CTkFrame):
             case "Focal mechanism":
                 self.focmec = Focmec(new_layer, self.main)
             case "Regional tectonics":
-                self.tectonics = Tectonic(new_layer)
+                self.tectonics = Tectonic(new_layer, self.main)
             case "Map inset":
-                self.inset = Inset(new_layer)
+                self.inset = Inset(new_layer, self.main)
             case "Legend":
                 self.legend = Legend(new_layer)
             case "Cosmetics":
@@ -646,17 +644,25 @@ class LayerMenu(ctk.CTkFrame):
         Args:
             tab: The tab widget to configure.
         """
-        text = CTkFrame(tab)
+        text = CTkFrame(tab, fg_color="transparent")
         text.place(x=0, y=0, relwidth=0.35, relheight=1)
-        opti = CTkFrame(tab)
+        opti = CTkFrame(tab, fg_color="transparent")
         opti.place(relx=0.35, y=0, relwidth=0.65, relheight=1)
         text.columnconfigure(0, weight=1)
         for i in range(10):
             text.rowconfigure(i, weight=1)
             opti.rowconfigure(i, weight=1)
-        for i in range(7):
-            opti.columnconfigure(i, weight=1, uniform="a")
-
+        opti.columnconfigure(0, weight=0, minsize=20)
+        for i in range(1, 7):
+            opti.columnconfigure(i, weight=1, minsize=30)
+        # debug layout
+        for i in range(0, 7):
+            label = ctk.CTkLabel(
+                opti,
+                text=f"",
+                fg_color="blue" if i % 2 == 0 else "green",
+            )
+            label.grid(row=0, rowspan=10, column=i, padx=0, pady=5, sticky="nsew")
         return text, opti
 
     def parameter_labels(self, label_frame: ctk.CTkFrame, labels_tips: dict[str, str]):
@@ -847,63 +853,39 @@ class MapPreview:
             os.remove(temp_script)
         with open((temp_script), "a", encoding="utf-8") as prev_script:
 
-            get_layers = self.main.get_layers
+            _layers = self.main.get_layers
             prev_script.write(f"gmt begin preview_{fname} {exten}\n")
             prev_script.write(
                 f"\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
             )
             prev_script.write(f"\tgmt basemap {bounds} -JM20c  -Ba+e\n")
-            if "Coastal line" in get_layers.layers:
-                script = get_layers.coast.script
-                prev_script.write(f"\t{script}\n")
-            if "Earth relief" in get_layers.layers:
-                script = get_layers.grdimage.script
-                prev_script.write(f"\t{script}\n")
-            if "Contour line" in get_layers.layers:
-                script = get_layers.contour.script
-                prev_script.write(f"\t{script}\n")
-            if "Earthquake plot" in get_layers.layers:
-                script = get_layers.earthquake.script
-                prev_script.write(f"\t{script}\n")
-            if "Focal mechanism" in get_layers.layers:
-                script = get_layers.focmec.script
-                prev_script.write(f"\t{script}\n")
-            if "Regional tectonics" in get_layers.layers:
-                script = get_layers.tectonics.script
-                prev_script.write(f"\t{script}\n")
-            if "Map inset" in get_layers.layers:
-                script = get_layers.inset.script
-                prev_script.write(f"\t{script}\n")
-            if "Legend" in get_layers.layers:
-                script = get_layers.legend.script
-                prev_script.write(f"\t{script}\n")
-            if "Cosmetics" in get_layers.layers:
-                script = get_layers.cosmetics.script
-                prev_script.write(f"\t{script}\n")
+            if "Coastal line" in _layers.layers:
+                prev_script.write(f"\t{_layers.coast.script}\n")
 
-                # for layer in get_layers.layers:
-                # match layer:
-                #     case "Coastal line":
-                #         script = get_layers.coast.script
-                #     case "Earth relief":
-                #         script = get_layers.grdimage.script
-                #     case "Contour line":
-                #         script = get_layers.contour.script
-                #     case "Earthquake plot":
-                #         script = get_layers.earthquake.script
-                #     case "Focal mechanism":
-                #         script = get_layers.focmec.script
-                #     case "Regional tectonics":
-                #         script = get_layers.tectonics.script
-                #     case "Map inset":
-                #         script = get_layers.inset.script
-                #     case "Legend":
-                #         script = get_layers.legend.script
-                #     case "Cosmetics":
-                #         script = get_layers.cosmetics.script
-                #     case _:
-                #         script = ""
-                # prev_script.write(f"\t{script}\n")
+            if "Earth relief" in _layers.layers:
+                prev_script.write(f"\t{_layers.grdimage.script}\n")
+
+            if "Contour line" in _layers.layers:
+                prev_script.write(f"\t{_layers.contour.script}\n")
+
+            if "Earthquake plot" in _layers.layers:
+                prev_script.write(f"\t{_layers.earthquake.script}\n")
+
+            if "Focal mechanism" in _layers.layers:
+                prev_script.write(f"\t{_layers.focmec.script}\n")
+
+            if "Regional tectonics" in _layers.layers:
+                prev_script.write(f"\t{_layers.tectonics.script}\n")
+
+            if "Map inset" in _layers.layers:
+                prev_script.write(f"\t{_layers.inset.script}\n")
+
+            if "Legend" in _layers.layers:
+                prev_script.write(f"\t{_layers.legend.script}\n")
+
+            if "Cosmetics" in _layers.layers:
+                prev_script.write(f"\t{_layers.cosmetics.script}\n")
+
             prev_script.write(f"gmt end\n")
 
     def threading_process(self, worker, args, name, refresh=False):
@@ -921,8 +903,10 @@ class MapPreview:
     def gmt_execute(self, script_name, output_dir, main_queue: queue.Queue, refresh):
         cwd = os.getcwd()
         os.chdir(output_dir)
+
         if os.name == "posix":
             os.system(f"chmod +x {script_name}")
+
         match os.name:
             case "nt":
                 command = script_name
@@ -931,18 +915,40 @@ class MapPreview:
 
         try:
             print(f"Running '{output_dir}/{script_name}' with subprocess.Popen()...")
-            # exit_code = os.system(f"{name}.bat")
-            generate_map = subprocess.Popen(
+
+            process = subprocess.Popen(
                 command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                bufsize=1,  # Line-buffered output
             )
-            stdout, stderr = generate_map.communicate()
-            return_code = generate_map.returncode
+
+            # Create threads to read stdout and stderr concurrently
+            stdout_reader_thread = threading.Thread(
+                target=self._read_pipe,
+                args=(process.stdout, main_queue, "STDOUT"),
+                name=f"{threading.current_thread().name}-StdoutReader",
+            )
+            stderr_reader_thread = threading.Thread(
+                target=self._read_pipe,
+                args=(process.stderr, main_queue, "STDERR"),
+                name=f"{threading.current_thread().name}-StderrReader",
+            )
+
+            stdout_reader_thread.start()
+            stderr_reader_thread.start()
+
+            # Wait for the process to complete
+            return_code = process.wait()
+
+            # Ensure reader threads have finished processing all output
+            stdout_reader_thread.join()
+            stderr_reader_thread.join()
+
             print(
-                f"[{threading.current_thread().name}] Process finished with     code: {return_code}"
+                f"[{threading.current_thread().name}] Process finished with code: {return_code}"
             )
             if return_code == 0:
                 if refresh == False:
@@ -953,30 +959,33 @@ class MapPreview:
                     main_queue.put(
                         ("REFRESHED", True, "GMT script executed successfully.")
                     )
-
             else:
                 main_queue.put(
                     (
                         "COMPLETE",
                         False,
-                        f"GMT script failed. Code: {return_code}\nStderr: {stderr}",
+                        f"GMT script failed. Code: {return_code}",  # Stderr will have been printed in real-time
                     )
                 )
-            if stdout:
-                print("Process Stdout:\n", stdout)
-            if stderr:
-                print("Process Stderr:\n", stderr)
 
-            # penerusnya apa
         except FileNotFoundError as e:
             main_queue.put(
                 ("COMPLETE", False, f"Error: Program '{command}' not found. ({e})")
             )
-
         except Exception as e:
             main_queue.put(("COMPLETE", False, f"An unexpected error occurred: {e}"))
         finally:
             os.chdir(cwd)
+
+    def _read_pipe(self, pipe, main_queue: queue.Queue, pipe_type: str):
+        """Reads lines from a pipe and prints them, also sending to main_queue if needed."""
+        for line in iter(pipe.readline, ""):
+            if line:
+                print(f"[{pipe_type}] {line.strip()}")
+                # You might want to put output lines into the main_queue
+                # For example, to update a text widget in your CustomTkinter UI
+                # main_queue.put((f"LOG_{pipe_type}", line.strip()))
+        pipe.close()
 
     def _check_queue(self):
         try:
@@ -1128,7 +1137,7 @@ class GrdOptions:
 
         self.grdimg_resource = StringVar(frame, value=next(iter(self.dict)))
 
-        entry = ctk.CTkOptionMenu(
+        entry = CTkOptionMenu(
             frame,
             fg_color="#565B5E",
             button_color="#565B5E",
@@ -1160,13 +1169,14 @@ class GrdOptions:
             self.res.set(self.dict[self.grdimg_resource.get()][1])
         print(f"self.res = {self.res.get()}")
 
-        entry = ctk.CTkOptionMenu(
+        entry = CTkOptionMenu(
             opti,
             variable=self.res,
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
             dynamic_resizing=False,
+            width=70,
         )
         CTkScrollableDropdown(
             entry,
@@ -1179,7 +1189,7 @@ class GrdOptions:
             autocomplete=True,
         )
 
-        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
+        entry.grid(row=row, column=0, columnspan=2, sticky="w")
 
     @property
     def unit(self):
@@ -1195,7 +1205,7 @@ class ColorOptions:
             dark_image=dark_picker_logo, light_image=light_picker_logo, size=(20, 20)
         )
 
-        select_color = ctk.CTkButton(
+        self.select_color = ctk.CTkButton(
             master,
             image=color_picker_logotk,
             text="",
@@ -1204,8 +1214,8 @@ class ColorOptions:
             hover_color="gray",
             fg_color="dim gray",
         )
-        select_color.grid(row=row, column=col)
-        CTkToolTip(select_color, "Color picker")
+        self.select_color.grid(row=row, column=col)
+        CTkToolTip(self.select_color, "Color picker")
 
     def color_chooser(self, var: StringVar, widget):
         rgb_code = ""
@@ -1226,17 +1236,52 @@ class ColorOptions:
             self.color_preview_updater(var, widget=widget)
             return rgb_code
 
-    def gmt_color_table(self, frame, row, col):
-        self.button_color_table = CTkButton(
+    @staticmethod
+    def gmt_color_palette(frame):
+        button_color_palette = CTkButton(
             frame,
-            text="Color Table",
-            command=lambda: self.color_table(),
+            text="CPT Table",
+            command=lambda: ColorOptions.color_palette(),
             width=20,
             hover_color="gray",
         )
-        self.button_color_table.grid(row=row, column=col)
+        button_color_palette.place(relx=0.1, rely=0.87)
 
-    def color_table(self):
+    @staticmethod
+    def color_palette():
+        dir = Path(__file__).resolve().parent
+        cpt_ = os.path.join(dir, "image", "GMT_CPTchart.png")
+        try:
+            if sys.platform == "win32":
+                # os.startfile is non-blocking on Windows
+                os.startfile(cpt_)
+            elif sys.platform == "darwin":  # macOS
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["open", cpt_])
+            else:  # Linux and other Unix-like systems
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["xdg-open", cpt_])
+        except (OSError, FileNotFoundError) as e:
+            messagebox.showerror(
+                "Error", f"Could not open file: {e}\nIs '{cpt_}' a valid path?"
+            )
+        except Exception as e:
+            # Catch any other unexpected errors
+            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+
+    @staticmethod
+    def gmt_color_table(frame):
+        button_color_table = CTkButton(
+            frame,
+            text="Color Table",
+            command=lambda: ColorOptions.color_table(),
+            width=20,
+            hover_color="gray",
+        )
+        button_color_table.place(relx=0.1, rely=0.87)
+
+    @staticmethod
+    def color_table():
         dir = Path(__file__).resolve().parent
         rgb_chart = os.path.join(dir, "image", "GMT_RGBchart.png")
         try:
@@ -1258,8 +1303,10 @@ class ColorOptions:
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
     def label_color_preview(self, master, row, col, var):
-        self.label_preview = CTkLabel(master, height=20, fg_color=var.get(), text="")
-        self.label_preview.grid(column=col, row=row, sticky="ew", columnspan=1, padx=5)
+        self.label_preview = CTkLabel(
+            master, height=20, width=40, fg_color=var.get(), text=""
+        )
+        self.label_preview.grid(column=col, row=row, sticky="w", columnspan=1, padx=5)
         self.color_preview_updater(var, self.label_preview)
         return self.label_preview
 
@@ -1321,44 +1368,113 @@ class ColorOptions:
             return ""
 
     def parameter_color(
-        self, frame: CTkFrame, row: int, var: StringVar, col_offset: int = 0
+        self,
+        frame: CTkFrame,
+        row: int,
+        var: StringVar,
+        toggle: BooleanVar | bool = False,
+        thickness: StringVar | bool = False,
     ):
+        _col = 0
 
-        entry = CTkEntry(frame, textvariable=var)
-        entry.bind(
+        if type(toggle) == BooleanVar:
+            _col = 1
+
+        color_entry = CTkEntry(frame, textvariable=var, width=100)
+        color_entry.bind(
             "<FocusOut>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+            lambda _: self.color_preview_updater(var_color=var, widget=preview),
         )
-        entry.bind(
+        color_entry.bind(
             "<KeyRelease>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+            lambda _: self.color_preview_updater(var_color=var, widget=preview),
         )
-        entry.bind(
+        color_entry.bind(
             "<Return>",
-            lambda event: self.color_preview_updater(var_color=var, widget=preview),
+            lambda _: self.color_preview_updater(var_color=var, widget=preview),
         )
-        preview = self.label_color_preview(frame, row=row, col=3, var=var)
-        self.button_color_chooser(frame, row=row, col=4, var=var, widget=preview)
+        preview = self.label_color_preview(frame, row=row, col=2 + _col, var=var)
+        self.button_color_chooser(frame, row=row, col=3 + _col, var=var, widget=preview)
+        vars = (color_entry, self.select_color)
+        if type(thickness) == StringVar:
+            self.parameter_line_thickness(frame, row + 1, _col, thickness)
+            vars = (color_entry, self.select_color, self.thickness_entry)
 
-        entry.grid(row=row, column=0, sticky="ew", columnspan=3, padx=5)
+        if type(toggle) == BooleanVar:
 
-    def parameter_line_thickness(self, frame, row, var):
+            checkbox = CTkCheckBox(
+                frame,
+                checkbox_width=20,
+                checkbox_height=20,
+                border_width=2,
+                height=22,
+                width=22,
+                variable=toggle,
+                text="",
+                command=lambda: self.color_toggle(toggle, vars),
+                onvalue=True,
+                offvalue=False,
+            )
+            checkbox.grid(row=row, column=0)
+        color_entry.grid(row=row, column=0 + _col, sticky="w", columnspan=2)
+
+    def color_toggle(self, _toggle, vars):
+        print("color toggle dipanggil")
+        if _toggle.get():
+            print("color toggle dipanggil on")
+            for var in vars:
+                var.configure(state=NORMAL, text_color="white")
+            dark_picker = Image.open("./image/dark_eyedropper.png")
+            dark_logo = CTkImage(
+                dark_image=dark_picker, light_image=dark_picker, size=(20, 20)
+            )
+            vars[1].configure(fg_color="dim gray", image=dark_logo)
+        else:
+            print("color toggle dipanggil off")
+            for var in vars:
+                var.configure(state=DISABLED, text_color="gray")
+
+            off_picker = Image.open("./image/off_eyedropper.png")
+            off_logo = CTkImage(
+                dark_image=off_picker, light_image=off_picker, size=(20, 20)
+            )
+            vars[1].configure(fg_color="gray30", image=off_logo)
+
+    def parameter_line_thickness(self, frame: CTkFrame, row: int, _col, var: StringVar):
         # CTkSlider
         pens = ["0p", "0.25p", "0.50p", "0.75p", "1p", "1.5p", "2p", "3p"]
 
-        entry = ctk.CTkComboBox(
+        self.thickness_entry = CTkOptionMenu(
             frame,
             variable=var,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            dynamic_resizing=False,
+            width=100,
+        )
+        CTkScrollableDropdown(
+            self.thickness_entry,
             values=pens,
+            width=100,
+            height=200,
+            justify="left",
+            resize=False,
         )
 
-        entry.grid(row=row, column=0, columnspan=3, padx=5, sticky="ew")
+        self.thickness_entry.grid(row=row, column=0 + _col, columnspan=2, sticky="w")
 
 
 class Coast(ColorOptions):
     def __init__(self, tab, menu: LayerMenu):
         self.menu = menu
         text, opti = self.menu.tab_menu_layout_divider(tab)
+        opti.columnconfigure(6, minsize=100)
+        self.toggle = (
+            BooleanVar(tab, True),
+            BooleanVar(tab, True),
+            BooleanVar(tab, True),
+        )
         self.color_land = StringVar(tab, "lightgreen")
         self.color_sea = StringVar(tab, value="lightblue")
         self.line_color = StringVar(tab, "black")
@@ -1371,32 +1487,32 @@ class Coast(ColorOptions):
         }
         self.menu.parameter_labels(text, labels)
 
-        self.parameter_color(opti, 1, self.color_land)
-        self.parameter_color(opti, 2, self.color_sea)
-        self.parameter_color(opti, 3, self.line_color)
-        self.parameter_line_thickness(opti, 4, self.line_size)
-        self.gmt_color_table(text, row=7, col=0)
+        self.parameter_color(opti, 1, self.color_land, self.toggle[0])
+        self.parameter_color(opti, 2, self.color_sea, self.toggle[1])
+        self.parameter_color(opti, 3, self.line_color, self.toggle[2], self.line_size)
+        # self.parameter_line_thickness(opti, 4, self.line_size,)
+        self.gmt_color_table(tab)
 
     @property
     def script(self):
-        sea = ""
         land = ""
-        line = "-W0"
+        sea = ""
+        line = ""
 
-        if self.color_land.get() != "off":
+        if self.toggle[0].get():
             land = f"-G{self.color_land.get()}"
 
-        if self.color_sea.get() != "off":
+        if self.toggle[1].get():
             sea = f"-S{self.color_sea.get()}"
 
-        if self.line_color.get() != "off":
+        if self.toggle[2].get():
             line = f"-W{self.line_size.get()},{self.line_color.get()}"
         script = f"gmt coast {land} {sea} {line}"
 
         return script
 
 
-class GrdImage:
+class GrdImage(ColorOptions):
     def __init__(self, main: MainApp, tab):
         self.main = main
         labels = {
@@ -1407,18 +1523,22 @@ class GrdImage:
             "Sea Masking": "",
         }
         text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+        opti.columnconfigure(5, minsize=80)
         print(f"map scale factor = {self.map_scale_factor}")
         resolution = self.update_resolution()
         self.grdimg_cpt_color = StringVar(opti, value="geo")
         self.grdimg_shading = ctk.StringVar(opti, "on")
         self.grdimg_shading_az = StringVar(opti, value="-45")
-        self.grdimg_masking = ctk.StringVar(opti, value="off")
+        self.masking_color = ctk.StringVar(opti, value="lightblue")
+        self.masking = BooleanVar(tab, False)
         self.grd = StringVar()
         self.res = StringVar(value=resolution)
         self.gmt_grd = GrdOptions(opti, self.grd, self.res)
         self.parameter_cpt(opti, 3)
         self.parameter_shading(opti, 4)
-        self.parameter_masking(opti, 5)
+        # self.parameter_masking(opti, 5)
+        self.parameter_color(opti, 5, self.masking_color, self.masking)
+        ColorOptions.gmt_color_palette(tab)
         self.main.get_layers.parameter_labels(text, labels)
         self.roi_changes_check()
 
@@ -1451,6 +1571,7 @@ class GrdImage:
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
+            width=70,
         )
         CTkScrollableDropdown(
             entry,
@@ -1463,19 +1584,19 @@ class GrdImage:
             autocomplete=True,
         )
 
-        entry.grid(row=row, column=0, columnspan=3, sticky="ew")
+        entry.grid(row=row, column=0, columnspan=2, sticky="w")
 
     def parameter_shading(self, opti, row):
 
         entry = CTkEntry(
-            opti,
-            textvariable=self.grdimg_shading_az,
-            justify="right",
+            opti, textvariable=self.grdimg_shading_az, justify="right", width=40
         )
         check = CTkCheckBox(
             opti,
             checkbox_width=20,
             checkbox_height=20,
+            height=22,
+            width=22,
             border_width=2,
             text="",
             variable=self.grdimg_shading,
@@ -1488,9 +1609,9 @@ class GrdImage:
 
         label2 = CTkLabel(opti, text="Azimuth :", anchor="e")
         label3 = CTkLabel(opti, text=" º", anchor="w")
-        entry.grid(row=row, column=3, sticky="ew")
-        label2.grid(row=row, column=1, columnspan=2, sticky="nsew", padx=10)
-        label3.grid(row=row, column=4, columnspan=1, sticky="nsew")
+        entry.grid(row=row, column=3, columnspan=1, sticky="ew")
+        label2.grid(row=row, column=1, columnspan=2, sticky="e", padx=5)
+        label3.grid(row=row, column=4, columnspan=1, sticky="w")
 
     def shading_azimuth_set(self, entry, label2, label3):
         if self.grdimg_shading.get() == "on":
@@ -1502,27 +1623,21 @@ class GrdImage:
             label2.configure(state=DISABLED)
             label3.configure(state=DISABLED)
 
-    def parameter_masking(self, opti, row):
+    # def parameter_masking(self, opti, row):
 
-        check = CTkCheckBox(
-            opti,
-            checkbox_width=20,
-            checkbox_height=20,
-            border_width=2,
-            text="",
-            variable=self.grdimg_masking,
-            onvalue="on",
-            offvalue="off",
-        )
-        check.grid(row=row, column=0, columnspan=1, sticky="ew")
-
-    @staticmethod
-    def abc(row: int, col: int):
-        GrdImage.cde(row, col)
-
-    @staticmethod
-    def cde(row, col):
-        print(row + col)
+    #     check = CTkCheckBox(
+    #         opti,
+    #         checkbox_width=20,
+    #         checkbox_height=20,
+    #         height=22,
+    #         width=22,
+    #         border_width=2,
+    #         text="",
+    #         variable=self.grdimg_masking,
+    #         onvalue="on",
+    #         offvalue="off",
+    #     )
+    #     check.grid(row=row, column=0, columnspan=1, sticky="ew")
 
     @property
     def map_scale_factor(self):
@@ -1535,8 +1650,8 @@ class GrdImage:
         mask = ""
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.grdimg_masking.get() == "on":
-            mask = "\ngmt coast -Slightblue"
+        if self.masking.get():
+            mask = f"\ngmt coast -S{self.masking_color}"
 
         return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
@@ -1577,8 +1692,8 @@ class Contour(ColorOptions):
         trace_id = self.grd.trace_add("write", self.recomend_interval)
         self.trace_handlers.append((self.grd, trace_id))
         self.after_id = None
-        self.parameter_color(self.opti, 4, self.color)
-        self.parameter_line_thickness(self.opti, 5, self.thickness)
+        self.parameter_color(self.opti, 4, self.color, False, self.thickness)
+        # self.parameter_line_thickness(self.opti, 5, self.thickness)
         self.parameter_contour_index()
         self.contour_queue = queue.Queue()
         self.main.after(100, self._check_queue)
@@ -1735,8 +1850,7 @@ class Contour(ColorOptions):
     def parameter_contour_interval(self):
 
         self.entry_interval = CTkEntry(
-            self.opti,
-            textvariable=self.interval[0],
+            self.opti, textvariable=self.interval[0], width=70
         )
 
         self.entry_interval.bind(
@@ -1748,8 +1862,8 @@ class Contour(ColorOptions):
         self.entry_interval.bind("<Return>", lambda event: self.interval_manual_input())
 
         self.label_unit = CTkLabel(self.opti, text=self.gmt_grd.unit)
-        self.label_unit.grid(row=3, column=2, sticky="w", padx=[0, 5])
-        self.entry_interval.grid(row=3, column=0, sticky="ew", columnspan=2, padx=5)
+        self.label_unit.grid(row=3, column=1, sticky="e", padx=[0, 20])
+        self.entry_interval.grid(row=3, column=0, columnspan=2, sticky="w")
         self.index_options()
 
     def index_options(self):
@@ -1771,6 +1885,7 @@ class Contour(ColorOptions):
             button_color="#565B5E",
             button_hover_color="#7A848D",
             dynamic_resizing=False,
+            width=80,
         )
         CTkScrollableDropdown(
             index_interval,
@@ -1783,7 +1898,7 @@ class Contour(ColorOptions):
             autocomplete=True,
             scrollbar=False,
         )
-        index_interval.grid(row=6, column=1, columnspan=2)
+        index_interval.grid(row=6, column=1, columnspan=2, sticky="w")
 
     def parameter_contour_index(self):
 
@@ -1791,10 +1906,11 @@ class Contour(ColorOptions):
             self.opti,
             checkbox_width=20,
             checkbox_height=20,
+            height=22,
+            width=22,
             border_width=2,
             text="",
             variable=self.index[0],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
             onvalue=True,
             offvalue=False,
         )
@@ -1803,9 +1919,10 @@ class Contour(ColorOptions):
             text=self.gmt_grd.unit,
             checkbox_width=20,
             checkbox_height=20,
+            height=22,
+            width=22,
             border_width=2,
             variable=self.index[3],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
             onvalue=True,
             offvalue=False,
         )
@@ -1816,7 +1933,6 @@ class Contour(ColorOptions):
             checkbox_height=20,
             border_width=2,
             variable=self.index[1],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
             onvalue=True,
             offvalue=False,
         )
@@ -1828,16 +1944,15 @@ class Contour(ColorOptions):
             checkbox_height=20,
             border_width=2,
             variable=self.index[2],
-            # command=lambda: self.shading_azimuth_set(entry, label2, label3),
             onvalue=True,
             offvalue=False,
         )
 
         index.grid(row=6, column=0)
-        self.unit_annot.grid(row=6, column=3, columnspan=3)
-        thicker.grid(row=7, column=0, columnspan=3)
+        self.unit_annot.grid(row=6, column=2, columnspan=1, sticky="w", padx=5)
+        thicker.grid(row=7, column=0, columnspan=2, sticky="w")
 
-        darker.grid(row=7, column=3, columnspan=3)
+        darker.grid(row=7, column=3, columnspan=3, sticky="w")
 
     @property
     def script(self):
@@ -1958,9 +2073,30 @@ class Earthquake(LayerMenu):
             width=50,
             hover_color="gray",
             fg_color="dim gray",
+            command=self.show_catalog,
         )
 
         button.place(relx=0.57, rely=0.87)
+
+    def show_catalog(self):
+        catalog = self.eq_file
+        try:
+            if sys.platform == "win32":
+                # os.startfile is non-blocking on Windows
+                os.startfile(catalog)
+            elif sys.platform == "darwin":  # macOS
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["open", catalog])
+            else:  # Linux and other Unix-like systems
+                # subprocess.Popen is non-blocking
+                subprocess.Popen(["xdg-open", catalog])
+        except (OSError, FileNotFoundError) as e:
+            messagebox.showerror(
+                "Error", f"Could not open file: {e}\nIs '{catalog}' a valid path?"
+            )
+        except Exception as e:
+            # Catch any other unexpected errors
+            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
     @staticmethod
     def str2date(date_str: tuple[StringVar, StringVar] | StringVar):
@@ -2017,6 +2153,7 @@ class Earthquake(LayerMenu):
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
+            width=100,
         )
         CTkScrollableDropdown(
             entry,
@@ -2029,18 +2166,18 @@ class Earthquake(LayerMenu):
             autocomplete=True,
             scrollbar=False,
         )
-        entry.grid(column=0, row=row, columnspan=3, sticky="ew")
+        entry.grid(column=0, row=row, columnspan=2, sticky="ew")
 
     def parameter_date(self, frame: CTkFrame, row: int):
         _start = datetime.now() - relativedelta(years=1)
         _end = datetime.now()
         date_start = DateEntry(frame, self.dates[0], _start)
         date_end = DateEntry(frame, self.dates[1], _end)
-        date_start.grid(row=row, column=0, columnspan=5, sticky="ew")
-        date_end.grid(row=row + 1, column=0, columnspan=5, sticky="ew")
+        date_start.grid(row=row, column=0, columnspan=3, sticky="ew")
+        date_end.grid(row=row + 1, column=0, columnspan=3, sticky="ew")
 
-    def parameter_magnitude_range(self, opti, row):
-
+    def parameter_magnitude_range(self, opti: CTkFrame, row):
+        opti.columnconfigure(5, minsize=3)
         range = CTkRangeSlider(
             opti,
             variables=(self.magnitudes[0], self.magnitudes[1]),
@@ -2050,15 +2187,16 @@ class Earthquake(LayerMenu):
             button_length=5,
             height=10,
             button_color="dim gray",
+            width=200,
         )
         range.grid(column=1, row=row, columnspan=3, padx=5)
-        entry_mag_min = CTkEntry(opti, textvariable=self.magnitudes[0])
-        entry_mag_max = CTkEntry(opti, width=50, textvariable=self.magnitudes[1])
+        entry_mag_min = CTkEntry(opti, textvariable=self.magnitudes[0], width=40)
+        entry_mag_max = CTkEntry(opti, textvariable=self.magnitudes[1], width=50)
 
-        entry_mag_min.grid(column=0, row=row, sticky="ew", padx=5)
-        entry_mag_max.grid(column=4, row=row, sticky="ew")
+        entry_mag_min.grid(column=0, row=row, sticky="w")
+        entry_mag_max.grid(column=4, row=row, columnspan=2, sticky="w")
         label = CTkLabel(opti, text="M", anchor="w")
-        label.grid(column=5, row=row, sticky="w", padx=3)
+        label.grid(column=6, row=row, sticky="w", padx=3)
 
     def parameter_depth_range(self, opti, row):
         range = CTkRangeSlider(
@@ -2072,13 +2210,13 @@ class Earthquake(LayerMenu):
             button_color="dim gray",
         )
         range.grid(column=1, row=row, columnspan=3, padx=5)
-        entry_dep_min = CTkEntry(opti, textvariable=self.depths[0])
-        entry_dep_max = CTkEntry(opti, width=50, textvariable=self.depths[1])
+        entry_dep_min = CTkEntry(opti, textvariable=self.depths[0], width=40)
+        entry_dep_max = CTkEntry(opti, textvariable=self.depths[1], width=50)
         label = CTkLabel(opti, text="Km", anchor="w")
-        label.grid(column=5, row=row, sticky="w", padx=3)
+        label.grid(column=6, row=row, sticky="w", padx=3)
 
-        entry_dep_min.grid(column=0, row=row, sticky="ew", padx=5)
-        entry_dep_max.grid(column=4, row=row)
+        entry_dep_min.grid(column=0, row=row, sticky="w")
+        entry_dep_max.grid(column=4, row=row, columnspan=2, sticky="w")
 
     def parameter_eq_size(self, opti, row):
 
@@ -2093,9 +2231,9 @@ class Earthquake(LayerMenu):
             button_color="dim gray",
             command=self.slider_callback,
         )
-        entry = CTkEntry(opti, textvariable=self.circle_size)
+        entry = CTkEntry(opti, textvariable=self.circle_size, width=50)
         entry.grid(column=4, row=row, columnspan=1)
-        slider_size.grid(column=1, row=row, columnspan=3)
+        slider_size.grid(column=1, row=row, columnspan=3, padx=5)
 
     def slider_callback(self, value):
         self.circle_size.set(round(value, 1))
@@ -2184,26 +2322,115 @@ class Focmec(Earthquake):
         return f"{makecpt}\tgmt meca {self.eq_file} -Sd{fm_scaler}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
 
 
-class Tectonic:
+class Tectonic(LayerMenu, ColorOptions):
     # source
     # ketebalan garis
     # warna garis
-    def __init__(self, tab):
-        self.a = tab
+    def __init__(self, tab, main: MainApp):
+        self.main = main
+        coord = self.main.get_coordinate.coord
+        width = coord[1] - coord[0]
+        height = coord[3] - coord[2]
+        if width > 10 or height > 10:
+            default = (
+                "Regional Geological Maps of Indonesia (Sukamto et al, 2011)",
+                "sukamto2011",
+            )
+        else:
+            default = (
+                "Compiled from Geological Maps of Indonesia 1:250,000",
+                "indo_compiled",
+            )
+        self.fault_source = StringVar(tab, default[0])
+        self.fault_code = StringVar(tab, default[1])
+        self.line_color = StringVar(tab, "gray20")
+        self.line_thickness = StringVar(tab, "0.25p")
+        text, opti = self.tab_menu_layout_divider(tab)
+        opti.columnconfigure(5, minsize=100)
+        labels = {
+            "Source data": "",
+            "Line color": "",
+            "Line thickness": "",
+        }
+        self.parameter_fault_data(opti, 1)
+        self.parameter_color(opti, 2, self.line_color, False, self.line_thickness)
+        self.parameter_labels(text, labels)
+        self.set_fault(self.fault_source.get())
+
+    def parameter_fault_data(self, opti, row):
+
+        self.source_options = {
+            "Compiled from Geological Maps of Indonesia 1:250,000": "indo_compiled",
+            "Regional Geological Maps of Indonesia (Sukamto et al, 2011)": "sukamto2011",
+            "Active Fault Maps of Indonesia (Soehaemi et al, 2021)": "soehaemi2021",
+        }
+        entry = ctk.CTkOptionMenu(
+            opti,
+            variable=self.fault_source,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=self.source_options.keys(),
+            command=lambda e: self.set_fault(e),
+            width=400,
+            height=125,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+        entry.grid(row=row, column=0, columnspan=6)
+
+    def set_fault(self, e):
+        print(e)
+        print("set_fault called")
+        self.fault_source.set(e)
+        self.fault_code.set(self.source_options[e])
+        self.fault_data = os.path.join(
+            Path(__file__).resolve().parent,
+            "data",
+            f"fault_{self.fault_code.get()}.txt",
+        )
+
+        # color = ui.get_color("Tectonic Line", "black")
 
     @property
     def script(self):
-        pass
+        if self.fault_code.get() == "sukamto2011":
+            gmt_script = f"\tgmt  plot {self.fault_data} -W{self.line_thickness.get()},{self.line_color.get()},solid -Sf+1i/0.2i+l+t -Ve\n"
+        else:
+            gmt_script = f"\tgmt  plot {self.fault_data} -W{self.line_thickness.get()},{self.line_color.get()},solid -Ve\n"
+        return gmt_script
 
 
 class Inset:
-    # lokasi
-    def __init__(self, tab):
-        self.a = tab
+    """
+    -ukuran inset dalam degree (berapa kali dari peta utama)
+    -ukuran inset dalam cm (berapa persen dari peta utama)
+    -lokasi inset berdasarkan DJ code ditambah offset x dan y dengan slider
+    -isi dalam inset peta coast atau grd
+    -warna dan ketebalan kotaknya"""
+
+    def __init__(self, tab, main: MainApp):
+        self.main = main
+        self.upscale = IntVar(tab, value=3)
+        self.inset_width = IntVar(
+            tab, value=int(int(self.main.get_projection.proj_width.get()) / 3)
+        )
+        self.inset_pos = StringVar(tab, value="TR")
+        self.offset_x = DoubleVar(tab, value=0.0)
+        self.offset_y = DoubleVar(tab, value=0.0)
+        self.inset_fill = ""
+        self.rect_color = ""
+        self.rect_thick = ""
 
     @property
     def script(self):
-        pass
+        inset = "gmt inset begin "
+        return inset
 
 
 class Legend:
