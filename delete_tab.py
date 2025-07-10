@@ -12,6 +12,7 @@ from customtkinter import (
     CTkImage,
     CTkCheckBox,
     CTkOptionMenu,
+    CTkSlider,
     filedialog,
     DISABLED,
     NORMAL,
@@ -52,6 +53,7 @@ class MainApp(ctk.CTk):
         self.minsize(700, 550)
         self.resize_image("map_simple_0.png")
         self.resize_image("map_relief_0.jpg")
+        # self.resizable(width=False, height=False)
         output_dir = self.load_state()
 
         self.frame_map_param = CTkFrame(self, width=210, height=550)
@@ -229,6 +231,10 @@ class MapFileName(CTkFrame):
         )
 
     @property
+    def name(self):
+        return self.file_name.get()
+
+    @property
     def name_script(self):
         if os.name == "posix":
             script = ".sh"
@@ -375,7 +381,7 @@ class MapProjection(CTkFrame):
         self.place(relx=0.01, rely=0.69, relheight=0.29, relwidth=0.95)
         self.projection_name = StringVar(self, value="Mercator")
         self.projection_option = StringVar(self, value="width")
-        self.proj_width = StringVar(self, value="20")
+        self.proj_width = IntVar(self, value=20)
         self.proj_scale = StringVar(self, value="10000")
         self.create_projection_menu()
 
@@ -663,6 +669,7 @@ class LayerMenu:
                 fg_color="blue" if i % 2 == 0 else "green",
             )
             label.grid(row=0, rowspan=10, column=i, padx=0, pady=5, sticky="nsew")
+
         return text, opti
 
     def parameter_labels(self, label_frame: ctk.CTkFrame, labels_tips: dict[str, str]):
@@ -755,8 +762,8 @@ class MapPreview:
 
         self.main.geometry(resize)
 
-        self.main.frame_map_param.pack(side="left")
-        self.main.frame_layers.pack(side="left")
+        self.main.frame_map_param.pack(side="left", expand=True, fill="both")
+        self.main.frame_layers.pack(side="left", expand=True, fill="both")
 
         print(f"rel frame layer width= {210/new_width}")
         self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 700)
@@ -830,6 +837,12 @@ class MapPreview:
             self.map_preview_off()
             print(self.prev_coord)
             print("coordinate berubah")
+            self.map_preview_on(True)
+        elif (
+            hasattr(self.main.get_layers, "inset")
+            and self.main.get_layers.inset.inset_pos[0].get() == "Outside"
+        ):
+            self.map_preview_off()
             self.map_preview_on(True)
         else:
             print(self.prev_coord)
@@ -1477,8 +1490,8 @@ class Coast(ColorOptions):
         )
         self.color_land = StringVar(tab, "lightgreen")
         self.color_sea = StringVar(tab, value="lightblue")
-        self.line_color = StringVar(tab, "black")
-        self.line_size = StringVar(tab, value="0.25p")
+        self.outline_color = StringVar(tab, "black")
+        self.outline_thickness = StringVar(tab, value="0.25p")
         labels = {
             "Land Color": "The color of dry area or island",
             "Sea Color": "The color of wet area like sea or lake",
@@ -1489,8 +1502,9 @@ class Coast(ColorOptions):
 
         self.parameter_color(opti, 1, self.color_land, self.toggle[0])
         self.parameter_color(opti, 2, self.color_sea, self.toggle[1])
-        self.parameter_color(opti, 3, self.line_color, self.toggle[2], self.line_size)
-        # self.parameter_line_thickness(opti, 4, self.line_size,)
+        self.parameter_color(
+            opti, 3, self.outline_color, self.toggle[2], self.outline_thickness
+        )
         self.gmt_color_table(tab)
 
     @property
@@ -1506,7 +1520,7 @@ class Coast(ColorOptions):
             sea = f"-S{self.color_sea.get()}"
 
         if self.toggle[2].get():
-            line = f"-W{self.line_size.get()},{self.line_color.get()}"
+            line = f"-W{self.outline_thickness.get()},{self.outline_color.get()}"
         script = f"gmt coast {land} {sea} {line}"
 
         return script
@@ -2220,7 +2234,7 @@ class Earthquake(LayerMenu):
 
     def parameter_eq_size(self, opti, row):
 
-        slider_size = ctk.CTkSlider(
+        slider_size = CTkSlider(
             opti,
             variable=self.circle_size,
             from_=0,
@@ -2245,7 +2259,7 @@ class Earthquake(LayerMenu):
 
     @property
     def script(self):
-        cpt_file = f"{self.main.get_name.dir_name}-depth.cpt"
+        cpt_file = f"{self.main.get_name.name}-depth.cpt"
         eq_scaler = (
             float(self.main.get_projection.proj_width.get())
             * 0.0005
@@ -2406,34 +2420,262 @@ class Tectonic(LayerMenu, ColorOptions):
         return gmt_script
 
 
-class Inset:
+class Inset(ColorOptions):
     """
-    -ukuran inset dalam degree (berapa kali dari peta utama)
+    -ukuran inset dalam degree (berapa kali dari peta utama, diambil dari yg terbesar(w/h))
     -ukuran inset dalam cm (berapa persen dari peta utama)
     -lokasi inset berdasarkan DJ code ditambah offset x dan y dengan slider
-    -isi dalam inset peta coast atau grd
+    -isi dalam inset peta coast atau grd (auto, customized)
     -warna dan ketebalan kotaknya"""
 
     def __init__(self, tab, main: MainApp):
         self.main = main
-        self.upscale = IntVar(tab, value=3)
-        self.inset_width = IntVar(
-            tab, value=int(int(self.main.get_projection.proj_width.get()) / 3)
-        )
-        self.inset_pos = StringVar(tab, value="TR")
+        self.scope = StringVar(tab, value=self.def_scope)
+        self.calc_dilatation(self.def_scope)
+
+        self.inset_width = IntVar(tab, value=30)
+        self.inset_pos = StringVar(tab, "Inside"), StringVar(tab, value="Top Right")
         self.offset_x = DoubleVar(tab, value=0.0)
         self.offset_y = DoubleVar(tab, value=0.0)
-        self.inset_fill = ""
-        self.rect_color = ""
-        self.rect_thick = ""
+        self.fill = StringVar(
+            tab, value="Default"
+        )  # default & custom. custom open new tab
+        self.rect_color = StringVar(tab, value="red")
+        self.rect_thick = StringVar(tab, value="1p")
+        self.draw_rect()
+        labels = {
+            "Area scope": "The dilatation factor, determine the inset coverage.\nCalculate based on the largest map side (width or height)",
+            "Size": "Width of inset map, percentage from map width (cm)",
+            "Location": "",
+            "Fill": "",
+            "Rectangle color": "",
+            "Rectangle thickness": "",
+        }
+        text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+        self.code = {
+            "Top Right": "TR",
+            "Top Center": "TC",
+            "Top Left": "TL",
+            "Bottom Right": "BR",
+            "Bottom Center": "BC",
+            "Bottom Left": "BL",
+            "Middle Right": "MR",
+            "Middle Center": "MC",
+            "Middle Left": "ML",
+        }
+        self.parameter_scope(opti, 1)
+        self.parameter_inset_size(opti, 2)
+        self.parameter_inset_location(opti, 3)
+        self.parameter_inset_fill(opti, 4)
+        self.parameter_color(opti, 5, self.rect_color, False, self.rect_thick)
+        self.main.get_layers.parameter_labels(text, labels)
+
+    def parameter_scope(self, opti, row):
+        option = ["1.5x", "2x", "2.5x", "3x", "3.5x"]
+        entry = CTkOptionMenu(
+            opti,
+            variable=self.scope,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            width=70,
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=option,
+            # command=lambda e: self.grdimg_cpt_color.set(e),
+            width=90,
+            height=170,
+            justify="center",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+            command=self.calc_dilatation,
+        )
+
+        entry.grid(row=row, column=0, columnspan=2, sticky="w")
+
+    def calc_dilatation(self, value):
+        self.scope.set(value)
+        self.dilatation = self.larger * float(self.scope.get()[:-1])
+        print(self.dilatation)
+
+    def parameter_inset_size(self, opti, row):
+        # 5%-60%
+        slider_size = CTkSlider(
+            opti,
+            variable=self.inset_width,
+            from_=5,
+            to=60,
+            number_of_steps=11,
+            button_length=5,
+            height=10,
+            button_color="dim gray",
+            command=self.slider_callback,
+            width=150,
+        )
+        entry = CTkEntry(opti, textvariable=self.inset_width, width=45)
+        entry.grid(column=0, row=row, columnspan=1, sticky="w")
+        slider_size.grid(column=1, row=row, columnspan=4, padx=5)
+        label = CTkLabel(opti, text="%")
+        label.grid(column=0, row=row, sticky="e")
+
+    def slider_callback(self, value):
+        self.inset_width.set(round(value))
+
+    def parameter_inset_location(self, opti, row):
+        def set_var(value):
+            self.inset_pos[0].set(value)
+            location.configure(text=self.inset_pos[0].get())
+
+        option_1 = ["Inside", "Outside"]
+
+        location = CTkButton(
+            opti,
+            text=self.inset_pos[0].get(),
+            width=60,
+            hover_color="gray",
+            fg_color="dim gray",
+        )
+        CTkScrollableDropdown(
+            location,
+            values=option_1,
+            justify="left",
+            height=100,
+            width=100,
+            resize=False,
+            button_height=23,
+            scrollbar=False,
+            command=lambda e: set_var(e),
+        )
+        code = CTkOptionMenu(
+            opti,
+            variable=self.inset_pos[1],
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            width=150,
+        )
+        CTkScrollableDropdown(
+            code,
+            values=self.code,
+            justify="left",
+            height=300,
+            width=150,
+            resize=False,
+            button_height=23,
+            scrollbar=False,
+            command=lambda e: self.inset_pos[1].set(e),
+        )
+        location.grid(row=row, column=0, sticky="w")
+        code.grid(row=row, column=1, columnspan=3, padx=[10, 0], sticky="w")
+
+    def parameter_inset_fill(self, opti, row):
+        option = ["Default", "Custom"]
+        entry = CTkOptionMenu(
+            opti,
+            variable=self.fill,
+            values=option,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            width=100,
+        )
+        CTkScrollableDropdown(
+            entry,
+            values=option,
+            # command=lambda e: self.grdimg_cpt_color.set(e),
+            width=120,
+            height=100,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+
+        entry.grid(row=row, column=0, columnspan=2, sticky="w")
+
+    @property
+    def def_scope(self):
+        if self.larger < 1.25:
+            upscale = "3.5x"
+        elif self.larger < 2.5:
+            upscale = "3x"
+        elif self.larger < 5:
+            upscale = "2.5x"
+        elif self.larger < 15:
+            upscale = "2x"
+        else:
+            upscale = "1.5x"
+        return upscale
+
+    @property
+    def inset_coord_r(self):
+        _x1, _x2, _y1, _y2 = self.main.get_coordinate.coord
+        mid_x = (_x1 + _x2) / 2
+        mid_y = (_y1 + _y2) / 2
+        x1 = mid_x - self.dilatation
+        x2 = mid_x + self.dilatation
+        y1 = mid_y - self.dilatation
+        y2 = mid_y + self.dilatation
+        return f"-R{x1:.2f}/{x2:.2f}/{y1:.2f}/{y2:.2f}"
+
+    def draw_rect(self):
+        rect_file = f"{self.main.get_name.dir_name}-inset_rect.txt"
+        x1, x2, y1, y2 = self.main.get_coordinate.coord
+        rect = f">\n{x1}\t{y1}\n{x1}\t{y2}\n>\n{x1}\t{y2}\n{x2}\t{y2}\n>\n{x2}\t{y2}\n{x2}\t{y1}\n>\n{x2}\t{y1}\n{x1}\t{y1}\n"
+        file_writer(rect_file, "w", rect)
+
+    @property
+    def larger(self):
+        x1, x2, y1, y2 = self.main.get_coordinate.coord
+        large = max((x2 - x1), (y2 - y1))
+        return large
 
     @property
     def script(self):
-        inset = "gmt inset begin "
-        return inset
+        filename = self.main.get_name.name
+        width = self.inset_width.get() * self.main.get_projection.proj_width.get() / 100
+
+        frame = "-Ba+e -BnEwS -Ve --FORMAT_GEO_MAP=ddd:mm --MAP_FRAME_TYPE=inside --FONT_ANNOT_PRIMARY=auto,Courier-Bold,grey40"
+        pos = "j"
+        offset = self.main.get_projection.proj_width.get() * 0.01
+        code = self.code[self.inset_pos[1].get()]
+        if self.inset_pos[0].get() == "Outside":
+            pos = "J"
+            offsets = {
+                "TR": f"{offset}/-{width}",
+                "TC": f"0c/{offset}",
+                "TL": f"1c/-{width}",
+                "BR": f"-{width}c/1",
+                "BC": f"0c/1",
+                "BL": f"-{width}c/1",
+                "MR": f"{offset}c/0",
+                "MC": offset,
+                "ML": f"1c/0",
+            }
+            offset = offsets[code]
+        print(code)
+        inset_1 = f"gmt inset begin -D{pos}{code}+o{offset}c {self.inset_coord_r} -JM{width:.1f}c\n"
+        inset_2 = f"\t\t{self.fill.get()}\n"
+        inset_3_ = f"\t\tgmt coast -Glightgreen -Slightblue {frame}\n"
+        inset_3 = f"\t\tgmt plot {filename}-inset_rect.txt -W{self.rect_thick.get()},{self.rect_color.get()} -Ve\n"
+        inset_4 = f"\tgmt inset end"
+
+        return f"{inset_1}{inset_2}{inset_3_}{inset_3}{inset_4}"
 
 
 class Legend:
+    """
+    auto
+    customize
+    checkboxes  eq size
+                fm size
+                elevation
+                depth
+                eq date
+                `"""
+
     def __init__(self, tab):
 
         self.legend_eq = ctk.BooleanVar()
@@ -2454,10 +2696,10 @@ class Cosmetics:
     """
     Title
     Subtitle
-    north arrow
-    scalebar
+    north arrow:style, size
+    scalebar:size(km)
+    gridlines:style, color, thickness
     custom text
-    inset map
     auto legend"""
 
     def __init__(self, tab):
