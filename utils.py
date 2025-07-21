@@ -1,4 +1,4 @@
-import os, subprocess, csv, math, threading, queue
+import os, subprocess, csv, math, threading, math, queue
 from datetime import datetime, timedelta
 from dateutil import parser
 from typing import Union, Dict, Any
@@ -16,78 +16,49 @@ def file_is_not_empty(filename):
     return os.path.getsize(filename) != 0
 
 
-# def find_min_max(
-#     filename: str,
-#     column_index: int,
-#     delimiter="\t",
-#     trim=False,
-#     date=False,
-# ):
-#     """
-#     Returns:
-#     a dictionary:
-#     {
-#     "min" : minimum value
-#     "max" : maximum value
-#     "count" : total line count
-#     "range" :  max - min
-#     "trim_min" : minimum value of trimmed data (5 percent)
-#     "trim_max" : maximum value of trimmed data (5 percent)
-#     "trim_range" : trim_max - trim_min
-#     """
+def longitude_to_km(longitude_degrees_diff: float, latitude_degrees: float) -> float:
+    """
+    Converts a difference in longitude (in degrees) to a distance in kilometers
+    at a specific latitude.
 
-#     line_count = 0
-#     data: list[float | datetime] = []
+    Args:
+        longitude_degrees_diff (float): The difference in longitude in degrees.
+                                        Can be positive or negative.
+        latitude_degrees (float): The latitude in degrees (from -90 to 90).
 
-#     with open(filename, "r") as file:
-#         for line in file:
-#             values = line.strip().split(delimiter)
-#             if date == False:
-#                 try:
-#                     data.append(float(values[column_index]))
-#                 except (ValueError, IndexError):
-#                     continue
-#             if date == True:
-#                 try:
-#                     data.append(parser.parse(values[column_index], ignoretz=True))
-#                 except (ValueError, IndexError):
-#                     continue
-#             line_count += 1
-#     if line_count == 0:
-#         return None
-#     minimum = min(data)
-#     maximum = max(data)
-#     range = maximum - minimum
-#     info = {
-#         "min": minimum,
-#         "max": maximum,
-#         "count": line_count,
-#         "range": range,
-#     }
-#     # min max value from trimmed 5 percent top and bottom of data
-#     if trim:
-#         trim_count = int(len(data) * (0.02))
-#         sorted_data = sorted(data)
-#         if trim_count == 0:
-#             trimmed_data = sorted_data
-#         else:
-#             trimmed_data = sorted_data[trim_count:-trim_count]
-#         trim_min = min(trimmed_data)
-#         trim_max = max(trimmed_data)
-#         trim_range = trim_max - trim_min
+    Returns:
+        float: The equivalent distance in kilometers.
+                Returns 0.0 if input latitude is outside the valid range.
+    """
+    # Earth's approximate radius in kilometers
+    # Using the WGS84 semi-major axis for a more common geodetic reference
+    EARTH_RADIUS_KM = 6378.137
 
+    # Validate latitude input
+    if not (-90 <= latitude_degrees <= 90):
+        print("Warning: Latitude must be between -90 and 90 degrees. Returning 0 km.")
+        return 0.0
 
-#         info = {
-#             "min": minimum,
-#             "max": maximum,
-#             "count": line_count,
-#             "range": range,
-#             "trim_min": round(trim_min, -1),
-#             "trim_max": round(trim_max, -1),
-#             "trim_range": trim_range,
-#         }
-#         return info
-#     return info
+    # Convert latitude from degrees to radians for trigonometric functions
+    latitude_radians = math.radians(latitude_degrees)
+
+    # Calculate the length of one degree of longitude at the given latitude
+    # The length of a degree of longitude is proportional to the cosine of the latitude.
+    # Formula: (pi/180) * R * cos(latitude_radians)
+    # Where:
+    #   pi/180 converts degrees to radians for the 1-degree difference
+    #   R is the Earth's radius
+    #   cos(latitude_radians) accounts for the convergence of meridians at poles
+    length_of_one_degree_longitude_at_latitude = (
+        (math.pi / 180) * EARTH_RADIUS_KM * math.cos(latitude_radians)
+    )
+
+    # Calculate the total distance
+    distance_km = (
+        abs(longitude_degrees_diff) * length_of_one_degree_longitude_at_latitude
+    )
+
+    return distance_km
 
 
 def reorder_columns(input_file, output_file, new_order):
@@ -525,82 +496,83 @@ def recommend_contour_interval(map_scale_factor, min_value, max_value):
         return None
 
     total_relief = max_value - min_value
-
+    print("total relief=", total_relief)
     scale_category = ""
-    if map_scale_factor < 5000:
+    if map_scale_factor < 50000:
         scale_category = "Very Large Scale"
-    elif 5000 <= map_scale_factor <= 25000:
+    elif 50000 <= map_scale_factor <= 500000:
         scale_category = "Large Scale"
-    elif 25000 < map_scale_factor <= 100000:
+    elif 500000 < map_scale_factor <= 2000000:
         scale_category = "Medium Scale"
-    else:  # map_scale_denominator > 100000
+    else:  # map_scale_denominator > 2000000
         scale_category = "Small Scale"
-
+    print(scale_category)
     relief_category = ""
-    if total_relief < 10:
+    if total_relief < 100:
         relief_category = "Very Low Relief"
-    elif 10 <= total_relief < 100:
+    elif 100 <= total_relief < 1000:
         relief_category = "Low to Moderate Relief"
-    elif 100 <= total_relief < 500:
+    elif 1000 <= total_relief < 2000:
         relief_category = "Moderate to High Relief"
-    else:  # total_relief >= 500
+    else:  # total_relief >= 2000
         relief_category = "Very High Relief"
+    print(relief_category)
+    divisor = 1
 
-    recommended_ci = None
-
-    standard_cis = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
+    standard_cis = [5, 10, 12.5, 20, 25, 50, 75, 100, 150, 200, 250, 500]
 
     if scale_category == "Very Large Scale":
         if relief_category == "Very Low Relief":
-            recommended_ci = 0.25
+            divisor = 10
 
         elif relief_category == "Low to Moderate Relief":
-            recommended_ci = 1
+            divisor = 40
 
         else:  # Moderate to High / Very High Relief
-            recommended_ci = 2
+            divisor = 40
 
     elif scale_category == "Large Scale":
         if relief_category == "Very Low Relief":
-            recommended_ci = 1
+            divisor = 10
 
         elif relief_category == "Low to Moderate Relief":
-            recommended_ci = 2
+            divisor = 15
 
         elif relief_category == "Moderate to High Relief":
-            recommended_ci = 5
+            divisor = 40
 
         else:  # Very High Relief (Mountainous)
-            recommended_ci = 10
+            divisor = 50
 
     elif scale_category == "Medium Scale":
         if relief_category == "Very Low Relief":
             # Very flat terrain is rarely mapped at medium scales for detailed contours
-            recommended_ci = 2
+            divisor = 10
 
         elif relief_category == "Low to Moderate Relief":
-            recommended_ci = 5
+            divisor = 15
 
         elif relief_category == "Moderate to High Relief":
-            recommended_ci = 10
+            divisor = 20
 
         else:  # Very High Relief (Mountainous)
-            recommended_ci = 20
+            divisor = 20
 
     else:  # scale_category == "Small Scale"
         if relief_category == "Very Low Relief":
             # Very flat terrain is almost never mapped with contours at small scales
-            recommended_ci = 10
+            divisor = 5
 
         elif relief_category == "Low to Moderate Relief":
-            recommended_ci = 20
+            divisor = 7.5
 
         elif relief_category == "Moderate to High Relief":
-            recommended_ci = 50
+            divisor = 10
 
         else:  # Very High Relief (Mountainous)
-            recommended_ci = 100
-
+            divisor = 12.5
+    recommended_ci = total_relief / divisor
+    print(recommended_ci)
     if recommended_ci is not None:
         closest_ci = min(standard_cis, key=lambda x: abs(x - recommended_ci))
         recommended_ci = closest_ci
@@ -608,25 +580,25 @@ def recommend_contour_interval(map_scale_factor, min_value, max_value):
     return recommended_ci
 
 
-RECOMMENDED_DEM_RESOLUTION_MAP = {
-    50000: "01s",
-    150000: "03s",
-    700000: "15s",
-    2000000: "30s",
-    4000000: "01m",
-    6000000: "02m",
-    8000000: "03m",
-    10000000: "05m",
-    12500000: "10m",
-    25000000: "15m",
-    50000000: "30m",
-    float("inf"): "01d",
-}
+RECOMMENDED_DEM_RESOLUTION = [
+    (50000, "01s"),
+    (150000, "03s"),
+    (700000, "15s"),
+    (2000000, "30s"),
+    (4000000, "01m"),
+    (6000000, "02m"),
+    (8000000, "03m"),
+    (10000000, "05m"),
+    (12500000, "10m"),
+    (25000000, "15m"),
+    (50000000, "30m"),
+    (float("inf"), "01d"),
+]
 
 
-def recommend_dem_resolution(map_scale_factor):
+def recommend_dem_resolution(map_scale_factor, for_contour=False):
     """
-    Recommends a suitable DEM resolution (in a standard format like "1s", "5m", or "1deg")
+    Recommends a suitable DEM resolution (in a standard format like "01s", "05m", or "01d")
     based on the map scale.
 
     Args:
@@ -640,8 +612,26 @@ def recommend_dem_resolution(map_scale_factor):
     if not isinstance(map_scale_factor, (int, float)) or map_scale_factor <= 0:
         return "01m"
 
-    for threshold, dem_res_string in RECOMMENDED_DEM_RESOLUTION_MAP.items():
+    initial_dem_res_index = -1
+    for i, (threshold, _) in enumerate(RECOMMENDED_DEM_RESOLUTION):
         if map_scale_factor <= threshold:
-            return dem_res_string
+            initial_dem_res_index = i
+            break
 
-    return "01m"
+    # If map_scale_factor is larger than all defined thresholds, use the coarsest resolution
+    if initial_dem_res_index == -1:
+        initial_dem_res_index = len(RECOMMENDED_DEM_RESOLUTION) - 1
+
+    # Get the base recommended resolution string
+    recommended_res_string = RECOMMENDED_DEM_RESOLUTION[initial_dem_res_index][1]
+
+    # Apply the "one level above" condition for contour generation
+    if for_contour:
+        # If there's a coarser resolution available in the list, use it.
+        # Otherwise, stick with the current (coarsest) resolution.
+        if initial_dem_res_index + 1 < len(RECOMMENDED_DEM_RESOLUTION):
+            recommended_res_string = RECOMMENDED_DEM_RESOLUTION[
+                initial_dem_res_index + 1
+            ][1]
+
+    return recommended_res_string

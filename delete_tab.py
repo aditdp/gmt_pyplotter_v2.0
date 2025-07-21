@@ -22,7 +22,7 @@ from tkinter import messagebox, Canvas, TclError
 from _date_delay_entry import DateEntry
 from functools import wraps
 
-# from CTkListbox import CTkListbox
+
 from pathlib import Path
 from PIL import Image, ImageTk
 from datetime import datetime, date
@@ -30,7 +30,8 @@ from dateutil.relativedelta import relativedelta
 from ctk_tooltip import CTkToolTip
 from ctk_coordinate_gui import CoordWindow
 from ctk_scrollable_dropdown import CTkScrollableDropdown
-from CTkColorPicker import *
+from CTkColorPicker.ctk_color_picker import AskColor
+from CTkColorPicker.ctk_color_picker_widget import CTkColorPicker
 from ctk_rangeslider import CTkRangeSlider
 from utils import *
 
@@ -368,6 +369,7 @@ class MapCoordinate(CTkFrame):
             roi[3].set(acquired_coord[3])
             self.coord_picked = True
             self.coord_button.configure(text="Edit Coordinate")
+            self.main.get_projection.update_map_scale()
         except ValueError:
             pass
         self.coord_button.configure(state=NORMAL)
@@ -381,9 +383,28 @@ class MapProjection(CTkFrame):
         self.place(relx=0.01, rely=0.69, relheight=0.29, relwidth=0.95)
         self.projection_name = StringVar(self, value="Mercator")
         self.projection_option = StringVar(self, value="width")
-        self.proj_width = IntVar(self, value=20)
-        self.proj_scale = StringVar(self, value="10000")
+        self.proj_width = StringVar(self, value="20")
+
+        self.proj_scale = StringVar(self)
+        self.update_map_scale()
         self.create_projection_menu()
+
+    def calculate_map_scale(self):
+        x1, x2, y1, y2 = self.main.get_coordinate.coord
+        width_deg = x2 - x1
+        mid_y = y2 - y1
+        width_real_km = longitude_to_km(width_deg, mid_y)
+        scale = int(width_real_km * 100000 / float(self.proj_width.get()))
+        return scale
+
+    def calculate_map_width(self):
+        x1, x2, y1, y2 = self.main.get_coordinate.coord
+        width_deg = x2 - x1
+        mid_y = y2 - y1
+        width_real_km = longitude_to_km(width_deg, mid_y)
+        width_real_cm = width_real_km * 100000
+        width_map_cm = width_real_cm / int(self.proj_scale.get())
+        return width_map_cm
 
     def create_projection_menu(self):
         label_main = CTkLabel(
@@ -427,9 +448,12 @@ class MapProjection(CTkFrame):
         self.scale_entry = ctk.CTkEntry(
             self,
             width=70,
-            textvariable=DoubleVar(value=10000),
+            textvariable=self.proj_scale,
             text_color="white",
         )
+        self.scale_entry.bind("<FocusOut>", lambda _: self.validate_scale())
+        self.scale_entry.bind("<KeyRelease>", lambda _: self.validate_scale())
+        self.scale_entry.bind("<Return>", lambda _: self.validate_scale())
         self.scale_unit = ctk.CTkLabel(self, text="cm", anchor="w")
         self.scale_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
         self.scale_entry.grid(row=row, column=2, columnspan=1, pady=5)
@@ -449,16 +473,46 @@ class MapProjection(CTkFrame):
             # command=select_projection_option,
         )
         self.width_entry = ctk.CTkEntry(
-            self,
-            width=70,
-            textvariable=DoubleVar(value=20),
-            text_color="white",
+            self, width=70, textvariable=self.proj_width, text_color="white"
         )
+
+        self.width_entry.bind("<FocusOut>", lambda _: self.validate_width())
+        self.width_entry.bind("<KeyRelease>", lambda _: self.validate_width())
+        self.width_entry.bind("<Return>", lambda _: self.validate_width())
         self.width_unit = ctk.CTkLabel(self, text="cm", anchor="w")
         self.width_radio.grid(row=row, column=0, columnspan=1, pady=5, sticky="w")
         self.width_entry.grid(row=row, column=2, columnspan=1, pady=5)  # , padx=10)
         self.width_unit.grid(row=row, column=5, pady=5)
         self.select_projection_option()
+
+    def update_map_scale(self):
+        scale = self.calculate_map_scale()
+        self.proj_scale.set(str(scale))
+
+    def validate_width(self):
+        try:
+            if 4 < float(self.proj_width.get()) < 51:
+                self.width_entry.configure(text_color="white")
+                self.update_map_scale()
+                return True
+            else:
+                raise ValueError
+        except ValueError:
+            self.width_entry.configure(text_color="red")
+            return False
+
+    def validate_scale(self):
+        try:
+            if 4 < float(self.proj_scale.get()) < 50000000:
+                self.scale_entry.configure(text_color="white")
+                width = self.calculate_map_width()
+                self.proj_width.set(f"{width:.1f}")
+                if not 4 < width < 51:
+                    raise ValueError
+            else:
+                raise ValueError
+        except ValueError:
+            self.scale_entry.configure(text_color="red")
 
     def select_projection_option(self):
         if self.projection_option.get() == "scale":
@@ -486,7 +540,7 @@ class MapProjection(CTkFrame):
     @property
     def map_scale_factor(self):
         width = float(roi[1].get()) - float(roi[0].get())
-        return width * 111.11 / (int(self.proj_width.get()) * 0.00001)
+        return width * 111.11 / (float(self.proj_width.get()) * 0.00001)
 
 
 class LayerMenu:
@@ -545,7 +599,7 @@ class LayerMenu:
             button_add_layer,
             values=options,
             justify="left",
-            height=265,
+            height=290,
             width=200,
             resize=False,
             button_height=23,
@@ -569,7 +623,7 @@ class LayerMenu:
         self.layers.remove(active_tab)
         match active_tab:
             case "Coastal line":
-                if hasattr(self, "coast") and self.coast is not None:
+                if hasattr(self, "coast"):
                     del self.coast
             case "Earth relief":
                 if self.grdimage.after_id:
@@ -637,9 +691,13 @@ class LayerMenu:
             case "Map inset":
                 self.inset = Inset(new_layer, self.main)
             case "Legend":
-                self.legend = Legend(new_layer)
+                self.legend = Legend(new_layer, self.main)
             case "Cosmetics":
-                self.cosmetics = Cosmetics(new_layer)
+                self.cosmetics = Cosmetics(new_layer, self.main)
+            case "coast_i":
+                self.coast_i = Coast(new_layer, self)
+            case "grd_i":
+                self.grd_i = GrdImageI(self.main, new_layer)
 
     def tab_menu_layout_divider(self, tab: CTkFrame):
         """Configures the grid layout for a tab widget.
@@ -675,10 +733,15 @@ class LayerMenu:
     def parameter_labels(self, label_frame: ctk.CTkFrame, labels_tips: dict[str, str]):
         labels = list(labels_tips.keys())
         tips = list(labels_tips.values())
-        widget_labels: dict[str, CTkLabel] = dict()
+        widget_labels: dict[str, CTkLabel] = {}
 
         for i in range(len(labels_tips)):
-
+            if labels[i] == f"{i+1}":
+                widget_labels[str(i)] = CTkLabel(
+                    label_frame, text=" ", anchor="e", fg_color="red"
+                )
+                widget_labels[str(i)].grid(row=i + 1, column=0, sticky="nsew", padx=10)
+                continue
             widget_labels[str(i)] = CTkLabel(
                 label_frame, text=f"{labels[i]}  :", anchor="e"
             )
@@ -867,11 +930,17 @@ class MapPreview:
         with open((temp_script), "a", encoding="utf-8") as prev_script:
 
             _layers = self.main.get_layers
+            width = round(float(self.main.get_projection.proj_width.get()))
             prev_script.write(f"gmt begin preview_{fname} {exten}\n")
             prev_script.write(
-                f"\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
+                "\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
             )
-            prev_script.write(f"\tgmt basemap {bounds} -JM20c  -Ba+e\n")
+            if (
+                hasattr(_layers, "cosmetics")
+                and _layers.cosmetics.gridlines_style != "Off"
+            ):
+                pass
+            prev_script.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
             if "Coastal line" in _layers.layers:
                 prev_script.write(f"\t{_layers.coast.script}\n")
 
@@ -880,15 +949,17 @@ class MapPreview:
 
             if "Contour line" in _layers.layers:
                 prev_script.write(f"\t{_layers.contour.script}\n")
+            if "Cosmetics" in _layers.layers:
+                prev_script.write(f"\t{_layers.cosmetics.script_grid}\n")
+
+            if "Regional tectonics" in _layers.layers:
+                prev_script.write(f"\t{_layers.tectonics.script}\n")
 
             if "Earthquake plot" in _layers.layers:
                 prev_script.write(f"\t{_layers.earthquake.script}\n")
 
             if "Focal mechanism" in _layers.layers:
                 prev_script.write(f"\t{_layers.focmec.script}\n")
-
-            if "Regional tectonics" in _layers.layers:
-                prev_script.write(f"\t{_layers.tectonics.script}\n")
 
             if "Map inset" in _layers.layers:
                 prev_script.write(f"\t{_layers.inset.script}\n")
@@ -899,7 +970,7 @@ class MapPreview:
             if "Cosmetics" in _layers.layers:
                 prev_script.write(f"\t{_layers.cosmetics.script}\n")
 
-            prev_script.write(f"gmt end\n")
+            prev_script.write("gmt end\n")
 
     def threading_process(self, worker, args, name, refresh=False):
         def thread_wrapper():
@@ -1262,8 +1333,8 @@ class ColorOptions:
 
     @staticmethod
     def color_palette():
-        dir = Path(__file__).resolve().parent
-        cpt_ = os.path.join(dir, "image", "GMT_CPTchart.png")
+        dir_ = Path(__file__).resolve().parent
+        cpt_ = os.path.join(dir_, "image", "GMT_CPTchart.png")
         try:
             if sys.platform == "win32":
                 # os.startfile is non-blocking on Windows
@@ -1295,8 +1366,8 @@ class ColorOptions:
 
     @staticmethod
     def color_table():
-        dir = Path(__file__).resolve().parent
-        rgb_chart = os.path.join(dir, "image", "GMT_RGBchart.png")
+        dir_ = Path(__file__).resolve().parent
+        rgb_chart = os.path.join(dir_, "image", "GMT_RGBchart.png")
         try:
             if sys.platform == "win32":
                 # os.startfile is non-blocking on Windows
@@ -1387,8 +1458,9 @@ class ColorOptions:
         var: StringVar,
         toggle: BooleanVar | bool = False,
         thickness: StringVar | bool = False,
+        col: int = 0,
     ):
-        _col = 0
+        _col = col
 
         if type(toggle) == BooleanVar:
             _col = 1
@@ -1408,10 +1480,10 @@ class ColorOptions:
         )
         preview = self.label_color_preview(frame, row=row, col=2 + _col, var=var)
         self.button_color_chooser(frame, row=row, col=3 + _col, var=var, widget=preview)
-        vars = (color_entry, self.select_color)
+        vars_ = [color_entry, self.select_color]
         if type(thickness) == StringVar:
             self.parameter_line_thickness(frame, row + 1, _col, thickness)
-            vars = (color_entry, self.select_color, self.thickness_entry)
+            vars_ = [color_entry, self.select_color, self.thickness_entry]
 
         if type(toggle) == BooleanVar:
 
@@ -1424,34 +1496,50 @@ class ColorOptions:
                 width=22,
                 variable=toggle,
                 text="",
-                command=lambda: self.color_toggle(toggle, vars),
+                command=lambda: self.color_toggle(toggle, vars_),
                 onvalue=True,
                 offvalue=False,
             )
             checkbox.grid(row=row, column=0)
         color_entry.grid(row=row, column=0 + _col, sticky="w", columnspan=2)
+        return vars_
+
+    def widget_toggle_on(self, vars):
+        for var in vars:
+            print(type(var))
+            var.configure(text_color="white")
+            if type(var) == CTkEntry:
+                var.configure(state=NORMAL)
+            if type(var) == CTkButton:
+                dark_picker = Image.open("./image/dark_eyedropper.png")
+                dark_logo = CTkImage(
+                    dark_image=dark_picker, light_image=dark_picker, size=(20, 20)
+                )
+                var.configure(fg_color="dim gray", image=dark_logo, state=NORMAL)
+
+    def widget_toggle_off(self, vars):
+        for var in vars:
+            var.configure(text_color="gray")
+            print("berubah gray")
+            if type(var) == CTkEntry:
+                var.configure(state=DISABLED)
+            if type(var) == CTkButton:
+                off_picker = Image.open("./image/off_eyedropper.png")
+                off_logo = CTkImage(
+                    dark_image=off_picker, light_image=off_picker, size=(20, 20)
+                )
+                print("var button textnya=")
+                print(type(var.cget("image")))
+                var.configure(fg_color="gray30", image=off_logo, state=DISABLED)
 
     def color_toggle(self, _toggle, vars):
         print("color toggle dipanggil")
         if _toggle.get():
             print("color toggle dipanggil on")
-            for var in vars:
-                var.configure(state=NORMAL, text_color="white")
-            dark_picker = Image.open("./image/dark_eyedropper.png")
-            dark_logo = CTkImage(
-                dark_image=dark_picker, light_image=dark_picker, size=(20, 20)
-            )
-            vars[1].configure(fg_color="dim gray", image=dark_logo)
+            self.widget_toggle_on(vars)
         else:
             print("color toggle dipanggil off")
-            for var in vars:
-                var.configure(state=DISABLED, text_color="gray")
-
-            off_picker = Image.open("./image/off_eyedropper.png")
-            off_logo = CTkImage(
-                dark_image=off_picker, light_image=off_picker, size=(20, 20)
-            )
-            vars[1].configure(fg_color="gray30", image=off_logo)
+            self.widget_toggle_off(vars)
 
     def parameter_line_thickness(self, frame: CTkFrame, row: int, _col, var: StringVar):
         # CTkSlider
@@ -1550,17 +1638,19 @@ class GrdImage(ColorOptions):
         self.gmt_grd = GrdOptions(opti, self.grd, self.res)
         self.parameter_cpt(opti, 3)
         self.parameter_shading(opti, 4)
-        # self.parameter_masking(opti, 5)
+
         self.parameter_color(opti, 5, self.masking_color, self.masking)
         ColorOptions.gmt_color_palette(tab)
         self.main.get_layers.parameter_labels(text, labels)
         self.roi_changes_check()
 
+    # replace
     def update_resolution(self):
         self.prev_coord = set([r.get() for r in roi])
         resolution = recommend_dem_resolution(self.map_scale_factor)
         return resolution
 
+    # replace
     def roi_changes_check(self):
         for r in roi:
             self.prev_coord.add(r.get())
@@ -1637,22 +1727,6 @@ class GrdImage(ColorOptions):
             label2.configure(state=DISABLED)
             label3.configure(state=DISABLED)
 
-    # def parameter_masking(self, opti, row):
-
-    #     check = CTkCheckBox(
-    #         opti,
-    #         checkbox_width=20,
-    #         checkbox_height=20,
-    #         height=22,
-    #         width=22,
-    #         border_width=2,
-    #         text="",
-    #         variable=self.grdimg_masking,
-    #         onvalue="on",
-    #         offvalue="off",
-    #     )
-    #     check.grid(row=row, column=0, columnspan=1, sticky="ew")
-
     @property
     def map_scale_factor(self):
         return self.main.get_projection.map_scale_factor
@@ -1665,7 +1739,7 @@ class GrdImage(ColorOptions):
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
         if self.masking.get():
-            mask = f"\ngmt coast -S{self.masking_color}"
+            mask = f"\ngmt coast -S{self.masking_color.get()}"
 
         return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
 
@@ -1674,7 +1748,7 @@ class Contour(ColorOptions):
     # Unable to obtain remote file no internet
     def __init__(self, main: MainApp, tab):
         self.main = main
-        resolution = recommend_dem_resolution(self.map_scale_factor)
+        resolution = recommend_dem_resolution(self.map_scale_factor, True)
         self.color = StringVar(tab, "gray60")
         self.thickness = StringVar(tab, "0.25p")
         self.interval = [StringVar(), StringVar()]
@@ -1684,6 +1758,7 @@ class Contour(ColorOptions):
             BooleanVar(tab, value=True),  # toggle darker index
             BooleanVar(tab, value=False),  # toggle unit
         ]
+        self.font_size = StringVar(tab, value="9p")
         labels = {
             "Grid data": "",
             "Grid resolution": "",
@@ -1691,13 +1766,12 @@ class Contour(ColorOptions):
             "Color": "",
             "Thickness": "",
             "Index contour": "",
-            # "Different Annotated Contour Line": "",
+            "7": "",
         }
 
         text, self.opti = self.main.get_layers.tab_menu_layout_divider(tab)
         self.main.get_layers.parameter_labels(text, labels)
-        label = CTkLabel(text, text=" ")
-        label.grid(row=7, column=0)
+
         self.grd = StringVar()
         self.res = StringVar(value=resolution)
         self.gmt_grd = GrdOptions(self.opti, self.grd, self.res, ctr=True)
@@ -1783,25 +1857,25 @@ class Contour(ColorOptions):
             if "Unable to obtain remote file" in stderr:
                 message = f"Couldn't connect to GMT remote server for downloading {grd}{res} data.\nConnect to internet or change network connection."
                 raise ConnectionError(message)
-            min = grdinfo[5]
-            max = grdinfo[6]
-            if min.lower() == "nan" or max.lower() == "nan":
+            min_ = grdinfo[5]
+            max_ = grdinfo[6]
+            if min_.lower() == "nan" or max_.lower() == "nan":
 
                 raise ValueError(
                     f"No data {grd}{res} in this area..\nChoose another grid data or delete the Contour layer."
                 )
 
-            min = float(grdinfo[5])
-            max = float(grdinfo[6])
+            min_ = float(grdinfo[5])
+            max_ = float(grdinfo[6])
             # debug
             print(" " * 20 + "min")
-            print(min)
+            print(min_)
             print(" " * 20 + "max")
-            print(max)
+            print(max_)
 
-            if min < 0:
-                min = 0
-            recomendation = recommend_contour_interval(scale_factor, min, max)
+            if min_ < 0:
+                min_ = 0
+            recomendation = recommend_contour_interval(scale_factor, min_, max_)
             if return_code == 0:
                 self.contour_queue.put(("COMPLETE", recomendation))
             else:
@@ -1823,7 +1897,9 @@ class Contour(ColorOptions):
         self.entry_interval.configure(state=DISABLED, text_color="gray")
         if self.res.get() not in self.gmt_grd.dict[self.gmt_grd.grdimg_resource.get()]:
             self.res.set(self.gmt_grd.dict[self.gmt_grd.grdimg_resource.get()][1])
-        self.prev_coord = set([r.get() for r in roi])
+        self.prev_coord = set()
+        for r in roi:
+            self.prev_coord.add(r.get())
         calc_thread = threading.Thread(
             target=self.estimate_interval,
             args=[
@@ -1839,7 +1915,7 @@ class Contour(ColorOptions):
 
     def update_unit_and_interval(self, rec: str, status: str = ""):
         self.label_unit.configure(text=self.gmt_grd.unit)
-        self.unit_annot.configure(text=self.gmt_grd.unit)
+        self.w_unit_annot.configure(text=self.gmt_grd.unit)
         self.entry_interval.configure(state=NORMAL, text_color="green")
         if rec == "":
             messagebox.showerror("Error", status)
@@ -1892,17 +1968,17 @@ class Contour(ColorOptions):
         except (ValueError, ZeroDivisionError):
             contour_index_opt = []
 
-        index_interval = ctk.CTkOptionMenu(
+        self.w_index_interval = ctk.CTkOptionMenu(
             self.opti,
             variable=self.interval[1],
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
             dynamic_resizing=False,
-            width=80,
+            width=75,
         )
         CTkScrollableDropdown(
-            index_interval,
+            self.w_index_interval,
             values=contour_index_opt,
             command=lambda e: self.interval[1].set(e),
             width=130,
@@ -1912,7 +1988,7 @@ class Contour(ColorOptions):
             autocomplete=True,
             scrollbar=False,
         )
-        index_interval.grid(row=6, column=1, columnspan=2, sticky="w")
+        self.w_index_interval.grid(row=6, column=1, columnspan=2, sticky="w")
 
     def parameter_contour_index(self):
 
@@ -1927,8 +2003,9 @@ class Contour(ColorOptions):
             variable=self.index[0],
             onvalue=True,
             offvalue=False,
+            command=self.toggle_index,
         )
-        self.unit_annot = CTkCheckBox(
+        self.w_unit_annot = CTkCheckBox(
             self.opti,
             text=self.gmt_grd.unit,
             checkbox_width=20,
@@ -1940,9 +2017,10 @@ class Contour(ColorOptions):
             onvalue=True,
             offvalue=False,
         )
-        thicker = CTkCheckBox(
+        self.w_thicker = CTkCheckBox(
             self.opti,
-            text=f"Thicker Index",
+            text="Thicker Index",
+            fg_color="#3B8ED0",
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
@@ -1951,9 +2029,10 @@ class Contour(ColorOptions):
             offvalue=False,
         )
 
-        darker = CTkCheckBox(
+        self.w_darker = CTkCheckBox(
             self.opti,
             text="Darker Index",
+            fg_color="#3B8ED0",
             checkbox_width=20,
             checkbox_height=20,
             border_width=2,
@@ -1961,12 +2040,59 @@ class Contour(ColorOptions):
             onvalue=True,
             offvalue=False,
         )
-
+        self.w_font_label = CTkLabel(
+            self.opti, text="Font size:", text_color_disabled="gray"
+        )
+        font_sizes = ["12p", "11p", "10p", "9p", "8p", "7p", "6p", "5p"]
+        self.w_font_button = ctk.CTkButton(
+            self.opti,
+            text=self.font_size.get(),
+            hover_color="gray",
+            fg_color="dim gray",
+            width=50,
+        )
+        CTkScrollableDropdown(
+            self.w_font_button,
+            values=font_sizes,
+            command=lambda e: self.update_font_button(e),
+            width=100,
+            height=200,
+            justify="left",
+            resize=False,
+            autocomplete=True,
+            scrollbar=False,
+        )
+        self.w_font_label.grid(row=6, column=3, columnspan=2, sticky="w", padx=[0, 5])
+        self.w_font_button.grid(row=6, column=4, columnspan=2, sticky="e")
         index.grid(row=6, column=0)
-        self.unit_annot.grid(row=6, column=2, columnspan=1, sticky="w", padx=5)
-        thicker.grid(row=7, column=0, columnspan=2, sticky="w")
+        self.w_unit_annot.grid(row=6, column=2, columnspan=1, sticky="w")
+        self.w_thicker.grid(row=7, column=0, columnspan=2, sticky="nw")
 
-        darker.grid(row=7, column=3, columnspan=3, sticky="w")
+        self.w_darker.grid(row=7, column=3, columnspan=3, sticky="nw")
+
+    def update_font_button(self, e):
+        self.w_font_button.configure(text=e)
+        self.font_size.set(e)
+
+    def toggle_index(self):
+        vars_ = [
+            self.w_darker,
+            self.w_thicker,
+            self.w_font_button,
+            self.w_font_label,
+            self.w_index_interval,
+            self.w_unit_annot,
+        ]
+        if self.index[0].get():
+            for var in vars_:
+                var.configure(state=NORMAL)
+            vars_[0].configure(fg_color="#3B8ED0")
+            vars_[1].configure(fg_color="#3B8ED0")
+        else:
+            for var in vars_:
+                var.configure(state=DISABLED)
+            vars_[0].configure(fg_color="gray")
+            vars_[1].configure(fg_color="gray")
 
     @property
     def script(self):
@@ -1987,11 +2113,11 @@ class Contour(ColorOptions):
             unit = ""
             if self.index[3].get():
                 unit = f'+u" {self.gmt_grd.unit}"'
-            interval = f"-A{self.interval[1].get()}+ap{unit} -C{self.interval[0].get()}"
+            interval = f"-A{self.interval[1].get()}+ap{unit}+f{self.font_size.get()} -C{self.interval[0].get()}"
             color = f"-Wa{thickness_index},{color_index} -Wc{self.thickness.get()},{self.color.get()}"
         else:
             interval = f"-C{self.interval[0].get()}"
-            color = f"-Wc{self.thickness.get(),{self.color.get()}}"
+            color = f"-Wc{self.thickness.get()},{self.color.get()}"
 
         return f"gmt grdcontour {remote_data} {interval} {color} -LP "
 
@@ -2112,18 +2238,15 @@ class Earthquake(LayerMenu):
             # Catch any other unexpected errors
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
-    @staticmethod
-    def str2date(date_str: tuple[StringVar, StringVar] | StringVar):
+    @property
+    def date_strp(self):
         format = "%Y-%m-%d"
-        if isinstance(date_str, tuple):
-            date = [
-                datetime.strptime(item.get(), format)
-                for item in date_str
-                if type(item) == StringVar
-            ]
-        elif isinstance(date_str, StringVar):
-            date = datetime.strptime(date_str.get(), format)
-        return date
+        dates = [
+            datetime.strptime(item.get(), format)
+            for item in self.dates
+            if type(item) == StringVar
+        ]
+        return dates
 
     def download_catalog(self):
         print("download start")
@@ -2135,11 +2258,11 @@ class Earthquake(LayerMenu):
             "USGS": usgs_downloader,
         }
         catalog_file_name = f"{self.main.get_name.dir_name}_{self.catalog.get()}"
-        dates = Earthquake.str2date(self.dates)
+
         args = (
             catalog_file_name,
             self.main.get_coordinate.coord,
-            dates,
+            self.date_strp,
             [self.magnitudes[0].get(), self.magnitudes[1].get()],
             [self.depths[0].get(), self.depths[1].get()],
         )
@@ -2258,22 +2381,36 @@ class Earthquake(LayerMenu):
         return file_name
 
     @property
-    def script(self):
-        cpt_file = f"{self.main.get_name.name}-depth.cpt"
+    def depth_data(self):
+        real_depth_data = find_numeric_stats(self.eq_file, 2)
+        return real_depth_data
+
+    @property
+    def mag_data(self):
+        real_mag_data = find_numeric_stats(self.eq_file, 3)
+        return real_mag_data
+
+    @property
+    def eq_scaler(self):
         eq_scaler = (
             float(self.main.get_projection.proj_width.get())
             * 0.0005
             * self.circle_size.get()
         )
-        real_eq_depth = find_numeric_stats(self.eq_file, 2)
-        if real_eq_depth is None:
+        return eq_scaler
+
+    @property
+    def script(self):
+        cpt_file = f"{self.main.get_name.name}-depth.cpt"
+
+        if self.depth_data is None:
             return
-        # real_eq_mag = find_min_max(self.eq_file, 3)
-        cpt_interval = round(real_eq_depth["trim_range"] / 6, -1)
-        min_ = real_eq_depth["trim_min"]
+
+        cpt_interval = round(self.depth_data["trim_range"] / 6, -1)
+        min_ = self.depth_data["trim_min"]
         max_ = min_ + (cpt_interval * 6)
         makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
-        gmtmath = f"\tgmt math {self.eq_file} -C3 SQR {eq_scaler} MUL = | "
+        gmtmath = f"\tgmt math {self.eq_file} -C3 SQR {self.eq_scaler} MUL = | "
         gmtplot = f"gmt plot -C{cpt_file} -Scc -Wfaint,grey30 -Ve \n"
         return makecpt + gmtmath + gmtplot
 
@@ -2437,9 +2574,7 @@ class Inset(ColorOptions):
         self.inset_pos = StringVar(tab, "Inside"), StringVar(tab, value="Top Right")
         self.offset_x = DoubleVar(tab, value=0.0)
         self.offset_y = DoubleVar(tab, value=0.0)
-        self.fill = StringVar(
-            tab, value="Default"
-        )  # default & custom. custom open new tab
+        self.fill = StringVar(tab, value="Default")
         self.rect_color = StringVar(tab, value="red")
         self.rect_thick = StringVar(tab, value="1p")
         self.draw_rect()
@@ -2591,9 +2726,66 @@ class Inset(ColorOptions):
             resize=False,
             autocomplete=True,
             scrollbar=False,
+            command=lambda e: self.toggle_custom(e, opti, row),
         )
 
         entry.grid(row=row, column=0, columnspan=2, sticky="w")
+
+    def toggle_custom(self, arg, opti, row):
+        self.fill.set(arg)
+        print(arg)
+        custom_opt = ["coast_i"]
+        if arg == "Custom":
+            self.fill_custom = StringVar(opti, "coast_i")
+            self.custom_entry = CTkOptionMenu(
+                opti,
+                variable=self.fill_custom,
+                values=custom_opt,
+                fg_color="#565B5E",
+                button_color="#565B5E",
+                button_hover_color="#7A848D",
+                width=100,
+            )
+            CTkScrollableDropdown(
+                self.custom_entry,
+                values=custom_opt,
+                # command=lambda e: self.grdimg_cpt_color.set(e),
+                width=120,
+                height=100,
+                justify="left",
+                resize=False,
+                autocomplete=True,
+                scrollbar=False,
+                command=lambda e: self.inset_custom(e),
+            )
+            self.custom_entry.grid(row=row, column=2, columnspan=2, sticky="w")
+            self.inset_custom("coast_i")
+        else:
+            if hasattr(self, "custom_entry"):
+                self.custom_entry.grid_forget()
+            if hasattr(self.main.get_layers, "coast_i"):
+                self.main.get_layers.layer_control.delete("coast_i")
+                del self.main.get_layers.coast_i
+            elif hasattr(self.main.get_layers, "grd_i"):
+                self.main.after_cancel(self.main.get_layers.grd_i.after_id)
+                self.main.get_layers.layer_control.delete("grd_i")
+                del self.main.get_layers.grd_i
+
+    def inset_custom(self, choice):
+        self.fill_custom.set(choice)
+        if choice == "coast_i":
+            if hasattr(self.main.get_layers, "grd_i"):
+                self.main.after_cancel(self.main.get_layers.grd_i.after_id)
+                self.main.get_layers.layer_control.delete("grd_i")
+                del self.main.get_layers.grd_i
+            if not hasattr(self.main.get_layers, choice):
+                self.main.get_layers.add_tab(choice)
+        elif choice == "grd_i":
+            if hasattr(self.main.get_layers, "coast_i"):
+                self.main.get_layers.layer_control.delete("coast_i")
+                del self.main.get_layers.coast_i
+            if not hasattr(self.main.get_layers, choice):
+                self.main.get_layers.add_tab(choice)
 
     @property
     def def_scope(self):
@@ -2610,7 +2802,7 @@ class Inset(ColorOptions):
         return upscale
 
     @property
-    def inset_coord_r(self):
+    def inset_coord(self):
         _x1, _x2, _y1, _y2 = self.main.get_coordinate.coord
         mid_x = (_x1 + _x2) / 2
         mid_y = (_y1 + _y2) / 2
@@ -2618,6 +2810,12 @@ class Inset(ColorOptions):
         x2 = mid_x + self.dilatation
         y1 = mid_y - self.dilatation
         y2 = mid_y + self.dilatation
+        self.draw_rect()
+        return x1, x2, y1, y2
+
+    @property
+    def inset_coord_r(self):
+        x1, x2, y1, y2 = self.inset_coord
         return f"-R{x1:.2f}/{x2:.2f}/{y1:.2f}/{y2:.2f}"
 
     def draw_rect(self):
@@ -2635,11 +2833,15 @@ class Inset(ColorOptions):
     @property
     def script(self):
         filename = self.main.get_name.name
-        width = self.inset_width.get() * self.main.get_projection.proj_width.get() / 100
+        width = (
+            self.inset_width.get()
+            * float(self.main.get_projection.proj_width.get())
+            / 100
+        )
 
         frame = "-Ba+e -BnEwS -Ve --FORMAT_GEO_MAP=ddd:mm --MAP_FRAME_TYPE=inside --FONT_ANNOT_PRIMARY=auto,Courier-Bold,grey40"
         pos = "j"
-        offset = self.main.get_projection.proj_width.get() * 0.01
+        offset = float(self.main.get_projection.proj_width.get()) * 0.01
         code = self.code[self.inset_pos[1].get()]
         if self.inset_pos[0].get() == "Outside":
             pos = "J"
@@ -2648,21 +2850,70 @@ class Inset(ColorOptions):
                 "TC": f"0c/{offset}",
                 "TL": f"1c/-{width}",
                 "BR": f"-{width}c/1",
-                "BC": f"0c/1",
+                "BC": "0c/1",
                 "BL": f"-{width}c/1",
                 "MR": f"{offset}c/0",
                 "MC": offset,
-                "ML": f"1c/0",
+                "ML": "1c/0",
             }
             offset = offsets[code]
         print(code)
+        inset_fill = "gmt coast -Glightgreen -Slightblue"
+        if self.fill.get() == "Custom":
+            if hasattr(self.main.get_layers, "coast_i"):
+                inset_fill = self.main.get_layers.coast_i.script
+            elif hasattr(self.main.get_layers, "grd_i"):
+                inset_fill = self.main.get_layers.grd_i.script
         inset_1 = f"gmt inset begin -D{pos}{code}+o{offset}c {self.inset_coord_r} -JM{width:.1f}c\n"
-        inset_2 = f"\t\t{self.fill.get()}\n"
-        inset_3_ = f"\t\tgmt coast -Glightgreen -Slightblue {frame}\n"
+        inset_2 = f"\t\t{inset_fill} {frame}\n"
         inset_3 = f"\t\tgmt plot {filename}-inset_rect.txt -W{self.rect_thick.get()},{self.rect_color.get()} -Ve\n"
-        inset_4 = f"\tgmt inset end"
+        inset_4 = "\tgmt inset end"
 
-        return f"{inset_1}{inset_2}{inset_3_}{inset_3}{inset_4}"
+        return f"{inset_1}{inset_2}{inset_3}{inset_4}"
+
+
+class GrdImageI(GrdImage):
+    def __init__(self, main: MainApp, tab):
+        self.main = main
+        self.inset = self.main.get_layers.inset
+        self.coord = self.inset.inset_coord
+        super().__init__(main, tab)
+        resolution = self.update_resolution()
+        self.res.set(resolution)
+        self.roi_changes_check()
+
+    # replace
+    def update_resolution(self):
+        self.prev_coord = set([r for r in self.coord])
+        print("selfprevcoord created")
+        resolution = recommend_dem_resolution(self.map_scale_factor)
+        return resolution
+
+    # replace
+    def roi_changes_check(self):
+        for r in self.coord:
+            self.prev_coord.add(r)
+
+        if len(self.prev_coord) != 4:
+            self.prev_coord = set([r for r in self.coord])
+            new_res = recommend_dem_resolution(self.map_scale_factor)
+
+            self.res.set(new_res)
+            self.update_resolution()
+            print("-" * 20)
+            print("coordinate berubah")
+        self.after_id = self.main.after(100, self.roi_changes_check)
+
+    @property
+    def map_scale_factor(self):
+        width = self.coord[1] - self.coord[0]
+        return (
+            width
+            * 111.11
+            / (self.inset.inset_width.get())
+            * float(self.main.get_projection.proj_width.get())
+            * 0.0000001
+        )
 
 
 class Legend:
@@ -2676,14 +2927,188 @@ class Legend:
                 eq date
                 `"""
 
-    def __init__(self, tab):
+    def __init__(self, tab, main: MainApp):
+        self.main = main
+        self.name = self.main.get_name.dir_name
 
-        self.legend_eq = ctk.BooleanVar()
-        self.legend_fm = ctk.BooleanVar()
-        self.legend_date = ctk.BooleanVar()
-        self.legend_colorbar_elev = ctk.BooleanVar()
-        self.legend_colorbar_eq = ctk.BooleanVar()
-        self.legend_eq_loc = StringVar()
+        self.focmec = self.main.get_layers.focmec
+
+        self.legend_eq = BooleanVar(tab, value=False)
+        self.legend_fm = BooleanVar(tab, value=False)
+        # self.legend_date = BooleanVar(tab, value=False)
+        self.legend_colorbar_elev = BooleanVar(tab, value=False)
+        self.legend_colorbar_depth = BooleanVar(tab, value=False)
+        # self.legend_eq_loc = StringVar(tab, value=False)
+
+    def plot_beachball(self):
+        beach_ball = f"""gmt begin {self.name}-fm eps\n\techo 1.5 1.5 50 163 80 -21 6 0 0 | gmt meca -R1/2/1/2 -JM10c -Sa1c -Ggrey40 -E-\ngmt end\n"""
+        if os.name == "posix":
+            os.system(beach_ball)
+        else:
+            file_writer(f"{self.name}plot.bat", "w", beach_ball)
+            os.system(f"{self.name}plot.bat")
+            os.remove(f"{self.name}plot.bat")
+
+    def _legend_available(self):
+        if hasattr(self.main.get_layers, "earthquake"):
+            self.eq =self.main.get_layers.earthquake
+            if self.eq.depth_data is not None and self.eq.mag_data is not None:
+                self.legend_eq.set(True)
+                self.legend_colorbar_depth.set(True)
+        if hasattr(self.main.get_layers, "focmec"):
+            self.fm =self.main.get_layers.focmec
+            if self.fm.depth_data is not None and self.fm.mag_data is not None:
+                self.legend_fm.set(True)
+                self.legend_colorbar_depth.set(True)
+        if hasattr(self.main.get_layers, "gridmage"):
+            self.legend_colorbar_elev.set(True)
+    def _widget_draw
+
+    def legend_constructor(self):
+        """try horizontal legend first"""
+        eq = "No"
+        fm = "No"
+        el = "No"
+        legend_plot = ""
+        depth_colorbar_plot = ""
+        elev_colorbar_plot = ""
+        # magic
+        legend_file = f"{self.name}-LEGEND.txt"
+        if hasattr(self.main.get_layers, "earthquake"):
+            self.eq = self.main.get_layers.earthquake
+            eq = "Yes"
+            min_depth = self.eq.depth_data["trim_min"]
+            legend_width = round(
+                float(self.main.get_projection.proj_width.get()) * 0.75
+            )
+            try:
+                legend_date = f"{self.eq.date_strp[0].strftime('%b %d, %Y')}\nL -\nL 10p,Helvetica C to {self.eq.date_strp[1].strftime('%b %d, %Y')}"
+            except AttributeError:
+                legend_date = "--- to ---"
+            eq_mag_min = round(self.eq.mag_data["min"])
+            eq_mag_max = round(self.eq.mag_data["max"])
+            eq_mag_range = eq_mag_max - eq_mag_min + 1
+            top_label_col = f"N 2"
+            top_label = f"""L 10p,Helvetica c Earthquakes
+L -
+L 10p,Helvetica c {self.eq.mag_data['count']} events"""
+            mag_circle_col = "N 0.5 1 " + "1 " * eq_mag_range + str(eq_mag_range + 1.5)
+            # source = self.eq_source
+            mag_circle = "L - \n"
+            for i in range(eq_mag_min, eq_mag_max + 1):
+                mag_circle += f"S C c {i*i*self.eq.eq_scaler}c - faint,grey30 -\n"
+                if i == eq_mag_max:
+                    mag_circle += "L - \n"
+            bot_label = "L -\n"
+            for i in range(eq_mag_min, eq_mag_max + 1):
+                bot_label += f"L 10p,Helvetica C M {i} \n"
+                if i == eq_mag_max:
+                    bot_label += "L - \n"
+            if hasattr(self.main.get_layers, "focmec"):
+                fm = "Yes"
+                legend_width = self.main.get_projection.proj_width
+                self.plot_beachball()
+                legend_date = f"{self.eq.date_strp[0].strftime('%b %d, %Y')} to {self.eq.date_strp[1].strftime('%b %d, %Y')}"
+                fm_mag_min = round(self.real_fm_mag["min"])
+                fm_mag_max = round(self.real_fm_mag["max"]) + 1
+                fm_mag_range = fm_mag_max - fm_mag_min + 1
+                top_label_col = f"N 0.5 {eq_mag_range} 1 {fm_mag_range} 1 {eq_mag_range+2.5+fm_mag_range}"
+                top_label = f"""L -
+L 10p,Helvetica c Earthquakes 
+L -
+L 10p,Helvetica c Focal mechanism 
+L -
+L -
+L -
+L 10p,Helvetica c {self.real_eq_mag['count']} events
+L -
+L 10p,Helvetica c {self.real_fm_mag['count']} events
+L -
+L -
+"""
+                mag_circle_col = (
+                    "N 0.5 1 1 "
+                    + "1 " * (eq_mag_range + fm_mag_range)
+                    + str(eq_mag_range + 2.5 + fm_mag_range)
+                )
+
+                for i in range(fm_mag_min, fm_mag_max + 1):
+                    mag_circle += f"S C k{self.name}-fm.eps {i*self.fm_scaler/5}c - faint,grey30 -\n"
+                    if i == fm_mag_max:
+                        mag_circle += "L -\n"
+
+                for i in range(fm_mag_min, fm_mag_max + 1):
+                    bot_label += f"L 10p,Helvetica C M {i}\n"
+                    if i == fm_mag_max:
+                        bot_label += "L -\n"
+
+        elif hasattr(self, "focmec"):
+            fm = "Yes"
+            min_depth = round(self.real_fm_depth["min"], -1)
+            self.plot_beachball()
+            legend_date = f"{self.req_fm_date[0].strftime('%b %d, %Y')}\nL -\nL 10p,Helvetica C to {self.req_fm_date[1].strftime('%b %d, %Y')}"
+            fm_mag_min = round(self.real_fm_mag["min"])
+            fm_mag_max = round(self.real_fm_mag["max"]) + 1
+            fm_mag_range = fm_mag_max - fm_mag_min + 1
+            legend_width = round(self.map_width_cm * 0.75)
+            top_label_col = f"N 2"
+            top_label = f"L 10p,Helvetica c Focal Mechanism\nL -\nL 10p,Helvetica c {self.real_fm_mag['count']} events"
+            mag_circle_col = "N 0.5 1 " + "1 " * fm_mag_range + str(fm_mag_range + 1.5)
+            mag_circle = "L - \n"
+            for i in range(fm_mag_min, fm_mag_max + 1):
+                mag_circle += (
+                    f"S C k{self.name}-fm.eps {i*self.fm_scaler/5}c - faint,grey30 -\n"
+                )
+                if i == fm_mag_max:
+                    mag_circle += "L -\n"
+            bot_label = "L -\n"
+            for i in range(fm_mag_min, fm_mag_max + 1):
+                bot_label += f"L 10p,Helvetica C M {i}\n"
+                if i == fm_mag_max:
+                    bot_label += "L - \n"
+        if "Yes" in (eq, fm):
+            legend_text = f"""# script for plot legend 
+H 12p,Helvetica-Bold L E G E N D
+G 0.5c
+N 2
+L 10p,Helvetica C Data during {legend_date}
+G 0.3c
+{top_label_col}
+{top_label}
+G 0.2c
+{mag_circle_col}
+G 0.2c
+{mag_circle}
+G 0.2c
+{bot_label}
+G 0.1c"""
+            utils.file_writer("w", legend_file, legend_text, self.dir_output_path)
+
+            legend_plot = f"\tgmt legend -DJBC+o0c/1c+w{legend_width}c -F+p1p+gwhite+r {legend_file}\n"
+            depth_label = f"-B{self.cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
+            depth_colorbar_plot = f"\tgmt colorbar -DJBC+o{legend_width*0.25}c/2.3c+w{legend_width*0.3}c+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
+
+        if hasattr(self, "grdimage"):
+            el = "Yes"
+            offset = "0c/1c"
+            font = "12p"
+            width = self.map_width_cm * 0.3
+            if "Yes" in (fm, eq):
+                offset = f"{legend_width*0.25}c/4.5c"
+                font = "10p"
+                width = legend_width * 0.3
+            elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+            elev_colorbar_plot = f"\tgmt colorbar -DJBC+o{offset}+w{width}c+h -C{self.name}-elev.cpt {elev_label}"
+
+        added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
+        self.legend = {
+            "Type": "legend",
+            "Earthquake": eq,
+            "FocMech": fm,
+            "Elevation": el,
+            "script": added_gmt_script,
+        }
+        return self.legend
 
     # lokasi
     # radio button info apa aja yg masuk
@@ -2692,23 +3117,346 @@ class Legend:
         pass
 
 
-class Cosmetics:
+class Cosmetics(ColorOptions):
     """
-    Title
-    Subtitle
-    north arrow:style, size
-    scalebar:size(km)
+    Title---
+    Subtitle---
+    north arrow:style 0,1,2,3, size, loc=TL, offsets
+    scalebar:style(0,1), size(km)(calc), loc= TL, offsets
     gridlines:style, color, thickness
-    custom text
+    custom text:font= size, color, loc n---
     auto legend"""
 
-    def __init__(self, tab):
-        self.north_arrow = StringVar(tab)
-        self.scalebar = StringVar(tab)
+    def __init__(self, tab, main: MainApp):
+        self.main = main
+        self.north_style = StringVar(tab, value="North")
+        def_north_size = (
+            f"{round(float(self.main.get_projection.proj_width.get()) * 0.1)}"
+        )
+        self.north_size = StringVar(tab, value=def_north_size)
+        self.north_x = StringVar(tab, value="0.1")
+        self.north_y = StringVar(tab, value="0.15")
+        self.scalebar_style = StringVar(tab, value="Bar")
+        self.scalebar_size = StringVar(tab, value=self.calculate_scalebar_width)
+        self.scalebar_frame = BooleanVar(tab, value=False)
+        self.scalebar_frame_color = StringVar(tab, value="white")
+        self.scalebar_x = StringVar(tab, value="0.1")
+        self.scalebar_y = StringVar(tab, value="0.05")
+        self.gridlines_style = StringVar(tab, value="Line")
+        self.gridlines_color = StringVar(tab, value="royalblue")
+        self.gridlines_thickness = StringVar(tab, value="0p")
+        self.gridlines_interval = StringVar(tab, value="30m")
+        text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
+        text.rowconfigure(4, minsize=5, weight=0)
+        opti.rowconfigure(4, minsize=5, weight=0)
+        opti.columnconfigure(0, minsize=50)
+        labels = {
+            "North Arrow": "",
+            "2": "",
+            "Scalebar": "",
+            "4": "",
+            "5": "",
+            "Gridlines": "",
+            "7": "",
+        }
+        self.parameter_north_arrow(opti, 1)
+        self.parameter_scalebar(opti, 3)
+        self.parameter_gridlines(opti, 6)
+
+        self.main.get_layers.parameter_labels(text, labels)
+
+    def validate_widget(
+        self, value: StringVar, range: tuple[int | float, int | float], widget: CTkEntry
+    ):
+        try:
+            if range[0] <= float(value.get()) <= range[1]:
+                widget.configure(text_color="white")
+            else:
+                raise ValueError
+        except ValueError:
+            widget.configure(text_color="red")
+
+    def entry_validation_binder(
+        self,
+        value: StringVar,
+        range: tuple[float | int, float | int],
+        widget: CTkEntry,
+    ):
+        widget.bind("<FocusOut>", lambda _: self.validate_widget(value, range, widget))
+        widget.bind(
+            "<KeyRelease>", lambda _: self.validate_widget(value, range, widget)
+        )
+        widget.bind("<Return>", lambda _: self.validate_widget(value, range, widget))
+
+    def parameter_north_arrow(self, opti, row):
+        w_north_size = CTkEntry(opti, textvariable=self.north_size, width=50)
+        self.entry_validation_binder(self.north_size, (1.0, 5), w_north_size)
+        wl_north_size = CTkLabel(opti, text="size:")
+        wl_north_size_u = CTkLabel(opti, text="cm")
+
+        wl_north_x = CTkLabel(opti, text=" Position x:")
+        wl_north_y = CTkLabel(opti, text=" y:")
+        w_north_x = CTkEntry(opti, textvariable=self.north_x, width=50)
+        w_north_y = CTkEntry(opti, textvariable=self.north_y, width=50)
+        self.entry_validation_binder(self.north_x, (0, 0.99), w_north_x)
+        self.entry_validation_binder(self.north_y, (0, 0.99), w_north_y)
+        vars_ = [
+            w_north_size,
+            wl_north_size,
+            wl_north_size_u,
+            wl_north_x,
+            wl_north_y,
+            w_north_x,
+            w_north_y,
+        ]
+        w_north_style = CTkOptionMenu(
+            opti,
+            variable=self.north_style,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            width=100,
+        )
+        CTkScrollableDropdown(
+            w_north_style,
+            values=["North", "4-wind", "8-wind", "16-wind", "Off"],
+            width=100,
+            height=170,
+            justify="left",
+            resize=False,
+            scrollbar=False,
+            command=lambda e: self.toggle_cosmetic_widget(self.north_style, e, vars_),
+        )
+
+        w_north_style.grid(column=0, row=row, columnspan=2, sticky="w")
+        w_north_size.grid(column=3, row=row, columnspan=1, sticky="w")
+        wl_north_size.grid(column=2, row=row, sticky="e", padx=5)
+        wl_north_size_u.grid(column=4, row=row, sticky="w")
+        wl_north_x.grid(column=0, row=row + 1, columnspan=2, sticky="ne", padx=5)
+        w_north_x.grid(column=2, row=row + 1, columnspan=1, sticky="nw")
+        wl_north_y.grid(column=3, row=row + 1, columnspan=1, sticky="ne", padx=5)
+        w_north_y.grid(column=4, row=row + 1, columnspan=1, sticky="nw")
+
+    def parameter_scalebar(self, opti, row):
+
+        w_scalebar_size = CTkEntry(opti, textvariable=self.scalebar_size, width=50)
+        CTkToolTip(
+            w_scalebar_size,
+            f"The scalebar width\ndefault = {self.calculate_scalebar_width} km\nmin = {self.min_scalebar} km\nmax = {self.max_scalebar} km",
+            justify="left",
+        )
+        self.entry_validation_binder(
+            self.scalebar_size, (self.min_scalebar, self.max_scalebar), w_scalebar_size
+        )
+        wl_scalebar_size = CTkLabel(opti, text="size:")
+        wl_scalebar_size_u = CTkLabel(opti, text="Km")
+
+        wl_scalebar_x = CTkLabel(opti, text=" Position x:")
+        wl_scalebar_y = CTkLabel(opti, text=" y:")
+        w_scalebar_x = CTkEntry(opti, textvariable=self.scalebar_x, width=50)
+        w_scalebar_y = CTkEntry(opti, textvariable=self.scalebar_y, width=50)
+        self.entry_validation_binder(self.scalebar_x, (-0.3, 1.3), w_scalebar_x)
+        self.entry_validation_binder(self.scalebar_y, (-0.3, 0.99), w_scalebar_y)
+        vars_ = [
+            w_scalebar_size,
+            wl_scalebar_size,
+            wl_scalebar_size_u,
+            wl_scalebar_x,
+            wl_scalebar_y,
+            w_scalebar_x,
+            w_scalebar_y,
+        ]
+        w_scalebar_style = CTkOptionMenu(
+            opti,
+            variable=self.scalebar_style,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            width=100,
+        )
+        CTkScrollableDropdown(
+            w_scalebar_style,
+            values=["Bar", "Line", "Off"],
+            width=100,
+            height=120,
+            justify="left",
+            resize=False,
+            scrollbar=False,
+            command=lambda e: self.toggle_cosmetic_widget(
+                self.scalebar_style, e, vars_
+            ),
+        )
+        vars_ = self.parameter_color(
+            opti, row + 2, self.scalebar_frame_color, False, False, col=2
+        )
+        w_scalebar_frame = CTkCheckBox(
+            opti,
+            text="Frame :",
+            fg_color="#3B8ED0",
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            variable=self.scalebar_frame,
+            onvalue=True,
+            offvalue=False,
+            width=50,
+            command=lambda: self.color_toggle(self.scalebar_frame, vars_),
+        )
+
+        w_scalebar_style.grid(column=0, row=row, columnspan=2, sticky="w")
+        w_scalebar_size.grid(column=3, row=row, columnspan=1, sticky="w")
+        wl_scalebar_size.grid(column=2, row=row, sticky="e", padx=5)
+        wl_scalebar_size_u.grid(column=4, row=row, sticky="w")
+        wl_scalebar_x.grid(column=0, row=row + 1, columnspan=2, sticky="ne", padx=5)
+        w_scalebar_x.grid(column=2, row=row + 1, columnspan=1, sticky="nw")
+        wl_scalebar_y.grid(column=3, row=row + 1, columnspan=1, sticky="ne", padx=5)
+        w_scalebar_y.grid(column=4, row=row + 1, columnspan=1, sticky="nw")
+        w_scalebar_frame.grid(column=0, row=row + 2, columnspan=2, sticky="e", padx=5)
+
+    def parameter_gridlines(self, opti, row):
+        w_gridlines_style = CTkOptionMenu(
+            opti,
+            variable=self.gridlines_style,
+            fg_color="#565B5E",
+            button_color="#565B5E",
+            button_hover_color="#7A848D",
+            dynamic_resizing=False,
+            width=100,
+        )
+
+        wl_gridlines_thickness = CTkLabel(opti, text="Thickness:")
+        vars_ = self.parameter_color(
+            opti, row, self.gridlines_color, False, self.gridlines_thickness, 2
+        )
+        vars_.append(wl_gridlines_thickness)
+        CTkScrollableDropdown(
+            w_gridlines_style,
+            values=["Line", "Dot", "Dash", "Cross", "Off"],
+            width=150,
+            height=170,
+            justify="left",
+            resize=False,
+            scrollbar=False,
+            command=lambda e: self.toggle_cosmetic_widget(
+                self.gridlines_style, e, vars_
+            ),
+        )
+        wl_gridlines_thickness.grid(
+            column=0, row=row + 1, columnspan=2, sticky="ne", padx=(0, 5)
+        )
+        self.thickness_entry.grid(sticky="nw")
+        w_gridlines_style.grid(
+            column=0, row=row, columnspan=2, sticky="e", padx=(0, 10)
+        )
+
+    def toggle_cosmetic_widget(self, var, e, vars_):
+        if var.get() != "Off" and e != "Off":
+            var.set(e)
+            return
+        if var.get() == "Off" and e == "Off":
+            return
+        var.set(e)
+        if e == "Off":
+            toggle = BooleanVar(value=False)
+        else:
+            toggle = BooleanVar(value=True)
+        self.color_toggle(toggle, vars_)
+
+    @property
+    def calculate_scalebar_width(self):
+        scale_width = round(int(self.main.get_projection.proj_scale.get()) / 100000 * 3)
+        if scale_width < 5:
+            # Less than 5: round to the nearest integer
+            return str(round(scale_width))
+        elif 5 <= scale_width <= 10:
+            # 5-10: round to 10
+            return "10"
+        elif 10 < scale_width <= 50:
+            # 10-50: round to the nearest 5 interval
+            return str(round(scale_width / 5) * 5)
+        elif 50 < scale_width <= 100:
+            # 50-100: round to the nearest 10 interval
+            return str(round(scale_width / 10) * 10)
+        elif 100 < scale_width <= 200:
+            # 100-200: round to the nearest 20 interval
+            return str(round(scale_width / 20) * 20)
+        elif 200 < scale_width <= 500:
+            # 200-500: round to the nearest 50 interval
+            return str(round(scale_width / 50) * 50)
+        else:
+            # For values greater than 500, you might want to extend the logic
+            # For now, let's round to the nearest 100 for values > 500
+            return str(round(scale_width / 100) * 100)
+
+    @property
+    def min_scalebar(self):
+        return int(self.calculate_scalebar_width) / 4
+
+    @property
+    def max_scalebar(self):
+        return int(self.calculate_scalebar_width) * 2
 
     @property
     def script(self):
-        pass
+        north = ""
+        scalebar = ""
+        frame = ""
+        if self.north_style.get() != "Off":
+            style = ""
+            if self.north_style.get() == "4-wind":
+                style = "+f1"
+            if self.north_style.get() == "8-wind":
+                style = "+f2"
+            if self.north_style.get() == "16-wind":
+                style = "+f3"
+            north = f"-Tdn{self.north_x.get()}/{self.north_y.get()}{style}+l,,,N+w{self.north_size.get()}"
+
+        if self.scalebar_style.get() != "Off":
+            style = ""
+            if self.scalebar_style.get() == "Bar":
+                style = "+f"
+            scalebar = f"-Ln{self.scalebar_x.get()}/{self.scalebar_y.get()}{style}+w{self.scalebar_size.get()}k+l+ar"
+        # if hasattr(self.main.get_layers, "grdimage"):
+        if self.scalebar_frame.get():
+            frame = f"-Fl+g{self.scalebar_frame_color.get()}"
+        script = f"gmt basemap {north} {scalebar} {frame} --FONT_LABEL=10p,Courier,grey10 --FONT_ANNOT=10p,Courier,grey10"
+        return script
+
+    @property
+    def script_grid(self):
+        if self.gridlines_style.get() == "Off":
+            return ""
+
+        style = "solid"
+        if self.gridlines_style.get() == "Dot":
+            style = ".:10p"
+        elif self.gridlines_style.get() == "Dash":
+            style = "4_4"
+        elif self.gridlines_style.get() == "Cross":
+            style = "solid --MAP_GRID_CROSS_SIZE=0.4c"
+
+        x1, x2, _, _ = self.main.get_coordinate.coord
+        width_deg = x2 - x1
+        interval = ""
+        grid_intv = {
+            0.005: "5s",
+            0.01: "15s",
+            0.05: "30s",
+            0.1: "1m",
+            0.5: "5m",
+            1: "10m",
+            3: "30m",
+            6: "1d",
+            12: "2d",
+            24: "4d",
+            float("inf"): "",
+        }
+        for treshold, code in grid_intv.items():
+            if treshold < width_deg:
+                interval = code
+        print(interval)
+        grid = f"gmt basemap -Bg{interval} --MAP_GRID_PEN={self.gridlines_thickness.get()},{self.gridlines_color.get()},{style}"
+        return grid
 
 
 if __name__ == "__main__":
