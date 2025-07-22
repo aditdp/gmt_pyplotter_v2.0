@@ -19,7 +19,9 @@ from customtkinter import (
 )
 import ctypes, json, queue, sys
 from tkinter import messagebox, Canvas, TclError
-from _date_delay_entry import DateEntry
+
+# from _date_delay_entry import DateEntry
+from new_date_entry import DateEntry
 from functools import wraps
 
 
@@ -61,11 +63,11 @@ class MainApp(ctk.CTk):
         self.frame_layers = CTkFrame(self, width=490, height=550)
         self.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
         self.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
+        self.date_constructor()
         self.get_name = MapFileName(self, self.frame_map_param, output_dir)
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
         self.get_projection = MapProjection(self, self.frame_map_param)
         self.get_layers = LayerMenu(self, self.frame_layers)
-
         button = CTkButton(
             self.frame_map_param, text="scale", command=lambda: self.scalling()
         )
@@ -73,6 +75,21 @@ class MainApp(ctk.CTk):
         self.orig = True
         self.protocol("WM_DELETE_WINDOW", self.closing)
         self.mainloop()
+
+    def date_constructor(self):
+        print("dari constructor date")
+        _start = datetime.now() - relativedelta(years=2)
+        _end = datetime.now()
+        print(f"start biasa = {_start}")
+        print(f"end biasa = {_end}")
+        self.start_date = StringVar(
+            self.frame_layers, value=_start.strftime("%Y-%m-%d")
+        )
+        print(f"start srtf = {_start.strftime("%Y-%m-%d")}")
+        self.end_date = StringVar(self.frame_layers, value=_end.strftime("%Y-%m-%d"))
+        print(f"end srtf = {_end.strftime("%Y-%m-%d")}")
+        print(f"stringvar start = {self.start_date.get()}")
+        self.dates = self.start_date, self.end_date
 
     def resize_image(self, file):
         try:
@@ -683,9 +700,9 @@ class LayerMenu:
             case "Contour line":
                 self.contour = Contour(self.main, new_layer)
             case "Earthquake plot":
-                self.earthquake = Earthquake(new_layer, self.main)
+                self.earthquake = Earthquake(new_layer, self.main, self.main.dates)
             case "Focal mechanism":
-                self.focmec = Focmec(new_layer, self.main)
+                self.focmec = Focmec(new_layer, self.main, self.main.dates)
             case "Regional tectonics":
                 self.tectonics = Tectonic(new_layer, self.main)
             case "Map inset":
@@ -2124,10 +2141,11 @@ class Contour(ColorOptions):
 
 class Earthquake(LayerMenu):
 
-    def __init__(self, tab, main: MainApp):
+    def __init__(self, tab, main: MainApp, dates: tuple[StringVar, StringVar]):
         self.main = main
         self.eq_catalog = StringVar(tab, value="USGS")
-        self.dates = (StringVar(), StringVar())
+        self.dates = dates
+        print(f"dari init = {self.dates[0].get()}")
         self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = ctk.DoubleVar(tab, 1)
@@ -2238,15 +2256,52 @@ class Earthquake(LayerMenu):
             # Catch any other unexpected errors
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
+    # @property
+    # def date_strp(self):
+    #     format = "%Y-%m-%d"
+    #     dates = [
+    #         datetime.strptime(item.get(), format)
+    #         for item in self.dates
+    #         if type(item) == StringVar
+    #     ]
+    #     print(dates)
+    #     print(datetime.now())
+    #     return dates
     @property
     def date_strp(self):
-        format = "%Y-%m-%d"
-        dates = [
-            datetime.strptime(item.get(), format)
-            for item in self.dates
-            if type(item) == StringVar
-        ]
-        return dates
+        format_string = "%Y-%m-%d"  # Renamed 'format' for clarity
+        dates = []
+        # Add debug prints to confirm the content of StringVar before parsing
+        # print(f"DEBUG: self.dates (in Earthquake.date_strp) is: {self.dates}")
+
+        for item in self.dates:
+            if isinstance(
+                item, StringVar
+            ):  # Using isinstance is generally preferred over type() ==
+                date_string = item.get()
+                # print(f"DEBUG: StringVar content before strip: '{date_string}'") # See the raw string
+
+                # *** THE FIX IS HERE: .strip() ***
+                cleaned_date_string = date_string.strip()
+                # print(f"DEBUG: StringVar content after strip: '{cleaned_date_string}'") # See the cleaned string
+
+                try:
+                    dt_object = datetime.strptime(cleaned_date_string, format_string)
+                    dates.append(dt_object)
+                except ValueError as e:
+                    print(
+                        f"ERROR: Failed to parse '{cleaned_date_string}' with format '{format_string}'. Original string: '{date_string}'. Error: {e}"
+                    )
+                    raise  # Re-raise to ensure you see the error clearly if it persists
+            else:
+                # If for some reason a non-StringVar makes it here, you might want to handle it
+                print(f"DEBUG: Skipping non-StringVar item in date_strp: {type(item)}")
+                # If you expect datetime objects in self.dates at some point, handle them:
+                # if isinstance(item, datetime):
+                #     dates.append(item)
+
+        print(f"DEBUG: Successfully parsed dates in date_strp: {dates[0]}")
+        return (dates[0], dates[1])
 
     def download_catalog(self):
         print("download start")
@@ -2306,10 +2361,10 @@ class Earthquake(LayerMenu):
         entry.grid(column=0, row=row, columnspan=2, sticky="ew")
 
     def parameter_date(self, frame: CTkFrame, row: int):
-        _start = datetime.now() - relativedelta(years=1)
-        _end = datetime.now()
-        date_start = DateEntry(frame, self.dates[0], _start)
-        date_end = DateEntry(frame, self.dates[1], _end)
+        print(f"stringvar dari parameter_date ={self.dates[0].get}")
+        print(f"strp dari parameter_date = {self.date_strp[0]}")
+        date_start = DateEntry(frame, self.dates[0])
+        date_end = DateEntry(frame, self.dates[1])
         date_start.grid(row=row, column=0, columnspan=3, sticky="ew")
         date_end.grid(row=row + 1, column=0, columnspan=3, sticky="ew")
 
@@ -2400,16 +2455,25 @@ class Earthquake(LayerMenu):
         return eq_scaler
 
     @property
+    def cpt_interval(self):
+        if self.depth_data is not None and "trim_range" in self.depth_data:
+            return round(self.depth_data["trim_range"] / 6, -1)
+        else:
+
+            return round(self.depth_data["range"] / 6, -1)
+
+    @property
     def script(self):
         cpt_file = f"{self.main.get_name.name}-depth.cpt"
 
         if self.depth_data is None:
             return
-
-        cpt_interval = round(self.depth_data["trim_range"] / 6, -1)
-        min_ = self.depth_data["trim_min"]
-        max_ = min_ + (cpt_interval * 6)
-        makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+        if "trim_min" in self.depth_data:
+            min_ = self.depth_data["trim_min"]
+        else:
+            min_ = self.depth_data["min"]
+        max_ = min_ + (self.cpt_interval * 6)
+        makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{self.cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
         gmtmath = f"\tgmt math {self.eq_file} -C3 SQR {self.eq_scaler} MUL = | "
         gmtplot = f"gmt plot -C{cpt_file} -Scc -Wfaint,grey30 -Ve \n"
         return makecpt + gmtmath + gmtplot
@@ -2421,10 +2485,11 @@ class Focmec(Earthquake):
     # sumber katalog gcmt, user supplied
     # minmax magnitude
     # minmax depth
-    def __init__(self, tab, main: MainApp):
+    def __init__(self, tab, main: MainApp, dates):
+        super().__init__(tab, main, dates)
         self.main = main
         self.eq_catalog = StringVar(tab, value="USGS")
-        self.dates = (StringVar(), StringVar())
+        self.dates = dates
         self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = ctk.DoubleVar(tab, 1)
@@ -2451,13 +2516,23 @@ class Focmec(Earthquake):
         # self.main.after(100, self._check_queue)
 
     @property
-    def script(self):
-        cpt_file = f"{self.main.get_name.dir_name}-depth.cpt"
-        fm_scaler = (
+    def mag_data(self):
+        real_mag_data = find_numeric_stats(self.eq_file, 13)
+        return real_mag_data
+
+    @property
+    def fm_scaller(self):
+        fm_scaller = (
             float(self.main.get_projection.proj_width.get())
             * 0.025
             * self.circle_size.get()
         )
+        return fm_scaller
+
+    @property
+    def script(self):
+        cpt_file = f"{self.main.get_name.dir_name}-depth.cpt"
+
         real_fm_depth = find_numeric_stats(self.eq_file, 2)
         if real_fm_depth is None:
             return
@@ -2470,7 +2545,7 @@ class Focmec(Earthquake):
             print(f"min = {min_}")
             print(f"max = {max_}")
             makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
-        return f"{makecpt}\tgmt meca {self.eq_file} -Sd{fm_scaler}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
+        return f"{makecpt}\tgmt meca {self.eq_file} -Sd{self.fm_scaller}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
 
 
 class Tectonic(LayerMenu, ColorOptions):
@@ -2929,55 +3004,73 @@ class Legend:
 
     def __init__(self, tab, main: MainApp):
         self.main = main
-        self.name = self.main.get_name.dir_name
-
-        self.focmec = self.main.get_layers.focmec
+        self.name = self.main.get_name.name
+        self.dir_name = self.main.get_name.dir_name
 
         self.legend_eq = BooleanVar(tab, value=False)
         self.legend_fm = BooleanVar(tab, value=False)
         # self.legend_date = BooleanVar(tab, value=False)
         self.legend_colorbar_elev = BooleanVar(tab, value=False)
         self.legend_colorbar_depth = BooleanVar(tab, value=False)
+
         # self.legend_eq_loc = StringVar(tab, value=False)
 
     def plot_beachball(self):
-        beach_ball = f"""gmt begin {self.name}-fm eps\n\techo 1.5 1.5 50 163 80 -21 6 0 0 | gmt meca -R1/2/1/2 -JM10c -Sa1c -Ggrey40 -E-\ngmt end\n"""
+        beach_ball = f"""gmt begin {self.dir_name}-fm eps\n\techo 1.5 1.5 50 163 80 -21 6 0 0 | gmt meca -R1/2/1/2 -JM10c -Sa1c -Ggrey40 -E-\ngmt end\n"""
         if os.name == "posix":
             os.system(beach_ball)
         else:
-            file_writer(f"{self.name}plot.bat", "w", beach_ball)
-            os.system(f"{self.name}plot.bat")
-            os.remove(f"{self.name}plot.bat")
+            file_writer(f"{self.dir_name}plot.bat", "w", beach_ball)
+            os.system(f"{self.dir_name}plot.bat")
+            os.remove(f"{self.dir_name}plot.bat")
 
     def _legend_available(self):
         if hasattr(self.main.get_layers, "earthquake"):
-            self.eq =self.main.get_layers.earthquake
+            self.eq = self.main.get_layers.earthquake
             if self.eq.depth_data is not None and self.eq.mag_data is not None:
                 self.legend_eq.set(True)
                 self.legend_colorbar_depth.set(True)
         if hasattr(self.main.get_layers, "focmec"):
-            self.fm =self.main.get_layers.focmec
+            self.fm = self.main.get_layers.focmec
             if self.fm.depth_data is not None and self.fm.mag_data is not None:
                 self.legend_fm.set(True)
                 self.legend_colorbar_depth.set(True)
         if hasattr(self.main.get_layers, "gridmage"):
             self.legend_colorbar_elev.set(True)
-    def _widget_draw
+
+    # def _widget_draw
 
     def legend_constructor(self):
         """try horizontal legend first"""
         eq = "No"
         fm = "No"
         el = "No"
+        min_depth = 0
+        legend_date = ""
         legend_plot = ""
+        legend_width = 0
         depth_colorbar_plot = ""
         elev_colorbar_plot = ""
+        top_label_col = ""
+        top_label = ""
+        mag_circle = ""
+        mag_circle_col = ""
+        bot_label = ""
         # magic
         legend_file = f"{self.name}-LEGEND.txt"
-        if hasattr(self.main.get_layers, "earthquake"):
+        # if hasattr(self.main.get_layers, "earthquake"):
+        if (
+            hasattr(self.main.get_layers, "earthquake")
+            and type(self.main.get_layers.earthquake.depth_data) is dict
+            and self.main.get_layers.earthquake.depth_data is not None
+        ):
             self.eq = self.main.get_layers.earthquake
             eq = "Yes"
-            min_depth = self.eq.depth_data["trim_min"]
+
+            if "trim_min" in self.eq.depth_data:
+                min_depth = self.eq.depth_data["trim_min"]
+            else:
+                min_depth = self.eq.depth_data["min"]
             legend_width = round(
                 float(self.main.get_projection.proj_width.get()) * 0.75
             )
@@ -3005,12 +3098,13 @@ L 10p,Helvetica c {self.eq.mag_data['count']} events"""
                 if i == eq_mag_max:
                     bot_label += "L - \n"
             if hasattr(self.main.get_layers, "focmec"):
+                self.fm = self.main.get_layers.focmec
                 fm = "Yes"
-                legend_width = self.main.get_projection.proj_width
+                legend_width = float(self.main.get_projection.proj_width.get())
                 self.plot_beachball()
                 legend_date = f"{self.eq.date_strp[0].strftime('%b %d, %Y')} to {self.eq.date_strp[1].strftime('%b %d, %Y')}"
-                fm_mag_min = round(self.real_fm_mag["min"])
-                fm_mag_max = round(self.real_fm_mag["max"]) + 1
+                fm_mag_min = round(self.fm.mag_data["min"])
+                fm_mag_max = round(self.fm.mag_data["max"]) + 1
                 fm_mag_range = fm_mag_max - fm_mag_min + 1
                 top_label_col = f"N 0.5 {eq_mag_range} 1 {fm_mag_range} 1 {eq_mag_range+2.5+fm_mag_range}"
                 top_label = f"""L -
@@ -3020,9 +3114,9 @@ L 10p,Helvetica c Focal mechanism
 L -
 L -
 L -
-L 10p,Helvetica c {self.real_eq_mag['count']} events
+L 10p,Helvetica c {self.eq.mag_data['count']} events
 L -
-L 10p,Helvetica c {self.real_fm_mag['count']} events
+L 10p,Helvetica c {self.fm.mag_data['count']} events
 L -
 L -
 """
@@ -3033,7 +3127,7 @@ L -
                 )
 
                 for i in range(fm_mag_min, fm_mag_max + 1):
-                    mag_circle += f"S C k{self.name}-fm.eps {i*self.fm_scaler/5}c - faint,grey30 -\n"
+                    mag_circle += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5}c - faint,grey30 -\n"
                     if i == fm_mag_max:
                         mag_circle += "L -\n"
 
@@ -3041,24 +3135,25 @@ L -
                     bot_label += f"L 10p,Helvetica C M {i}\n"
                     if i == fm_mag_max:
                         bot_label += "L -\n"
-
-        elif hasattr(self, "focmec"):
+        # batasan
+        elif hasattr(self.main.get_layers, "focmec"):
+            self.fm = self.main.get_layers.focmec
             fm = "Yes"
-            min_depth = round(self.real_fm_depth["min"], -1)
+            min_depth = round(self.fm.depth_data["min"], -1)
             self.plot_beachball()
-            legend_date = f"{self.req_fm_date[0].strftime('%b %d, %Y')}\nL -\nL 10p,Helvetica C to {self.req_fm_date[1].strftime('%b %d, %Y')}"
-            fm_mag_min = round(self.real_fm_mag["min"])
-            fm_mag_max = round(self.real_fm_mag["max"]) + 1
+            legend_date = f"{self.fm.date_strp[0].strftime('%b %d, %Y')}\nL -\nL 10p,Helvetica C to {self.fm.date_strp[1].strftime('%b %d, %Y')}"
+            fm_mag_min = round(self.fm.mag_data["min"])
+            fm_mag_max = round(self.fm.mag_data["max"]) + 1
             fm_mag_range = fm_mag_max - fm_mag_min + 1
-            legend_width = round(self.map_width_cm * 0.75)
+            legend_width = round(
+                float(self.main.get_projection.proj_width.get()) * 0.75
+            )
             top_label_col = f"N 2"
-            top_label = f"L 10p,Helvetica c Focal Mechanism\nL -\nL 10p,Helvetica c {self.real_fm_mag['count']} events"
+            top_label = f"L 10p,Helvetica c Focal Mechanism\nL -\nL 10p,Helvetica c {self.fm.mag_data['count']} events"
             mag_circle_col = "N 0.5 1 " + "1 " * fm_mag_range + str(fm_mag_range + 1.5)
             mag_circle = "L - \n"
             for i in range(fm_mag_min, fm_mag_max + 1):
-                mag_circle += (
-                    f"S C k{self.name}-fm.eps {i*self.fm_scaler/5}c - faint,grey30 -\n"
-                )
+                mag_circle += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5}c - faint,grey30 -\n"
                 if i == fm_mag_max:
                     mag_circle += "L -\n"
             bot_label = "L -\n"
@@ -3082,39 +3177,40 @@ G 0.2c
 G 0.2c
 {bot_label}
 G 0.1c"""
-            utils.file_writer("w", legend_file, legend_text, self.dir_output_path)
+            file_writer(f"{self.dir_name}-LEGEND.txt", "w", legend_text)
 
             legend_plot = f"\tgmt legend -DJBC+o0c/1c+w{legend_width}c -F+p1p+gwhite+r {legend_file}\n"
-            depth_label = f"-B{self.cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
+            if hasattr(self, "eq"):
+                cpt_depth_interval = self.eq.cpt_interval
+            else:
+                cpt_depth_interval = self.fm.cpt_interval
+            depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
             depth_colorbar_plot = f"\tgmt colorbar -DJBC+o{legend_width*0.25}c/2.3c+w{legend_width*0.3}c+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
-
-        if hasattr(self, "grdimage"):
+        # batasan
+        if hasattr(self.main.get_layers, "grdimage"):
             el = "Yes"
             offset = "0c/1c"
             font = "12p"
-            width = self.map_width_cm * 0.3
+            width = float(self.main.get_projection.proj_width.get()) * 0.3
             if "Yes" in (fm, eq):
                 offset = f"{legend_width*0.25}c/4.5c"
                 font = "10p"
                 width = legend_width * 0.3
-            elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+            # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+
+            elev_label = (
+                f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+            )
             elev_colorbar_plot = f"\tgmt colorbar -DJBC+o{offset}+w{width}c+h -C{self.name}-elev.cpt {elev_label}"
 
-        added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
-        self.legend = {
-            "Type": "legend",
-            "Earthquake": eq,
-            "FocMech": fm,
-            "Elevation": el,
-            "script": added_gmt_script,
-        }
-        return self.legend
+        self.added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
 
     # lokasi
     # radio button info apa aja yg masuk
     @property
     def script(self):
-        pass
+        self.legend_constructor()
+        return self.added_gmt_script
 
 
 class Cosmetics(ColorOptions):
