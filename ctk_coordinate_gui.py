@@ -21,7 +21,7 @@ with warnings.catch_warnings():
 class AutoScrollbar(ctk.CTkScrollbar):
     """A scrollbar that hides itself if it's not needed. Works only for grid geometry manager"""
 
-    def set(self, lo, hi):
+    def set_(self, lo, hi):
         if float(lo) <= 0.0 and float(hi) >= 1.0:
             self.grid_remove()
         else:
@@ -47,7 +47,7 @@ class GlobeMap:
         # Scale for the canvas image zoom, public for outer classes
         self.imscale = 1.0
         self.__delta = 1.3  # Zoom magnitude
-        self.__filter = Image.LANCZOS
+        self.__filter = Image.Resampling.LANCZOS
         # Could be: NEAREST, BILINEAR, BICUBIC, HAMMING, and LANCZOS
         self.__previous_state = 0  # Previous state of the keyboard
         self.grid_color = "grey10"
@@ -278,7 +278,7 @@ class GlobeMap:
 
             #
             imagetk = ImageTk.PhotoImage(
-                image.resize((int(x2 - x1), int(y2 - y1)), Image.LANCZOS)
+                image.resize((int(x2 - x1), int(y2 - y1)), Image.Resampling.LANCZOS)
             )
             imageid = self.canvas.create_image(
                 max(box_canvas[0], box_img_int[0]),
@@ -644,7 +644,7 @@ class CoordinateWidget:
     def pixel_to_degree(self, x=0, y=0):
         return self.globemap.pixel_to_degree(x, y)
 
-    def degree_to_pixel(self, lon=0, lat=0):
+    def degree_to_pixel(self, lon=0.0, lat=0.0):
         return self.globemap.degree_to_pixel(lon, lat)
 
     def outside(self, x, y):
