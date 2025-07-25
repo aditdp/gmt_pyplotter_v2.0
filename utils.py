@@ -78,7 +78,7 @@ def find_numeric_stats(
     column_index: int,
     delimiter: str = "\t",
     trim_percentage: float = 0.05,
-) -> dict[str, float]:
+) -> dict[str, float | int]:
     """
     Analyzes a specified column in a delimited file to find min, max, count, and range
     for numeric (float) data.
@@ -127,13 +127,13 @@ def find_numeric_stats(
                     continue
     except FileNotFoundError:
         print(f"Error: File '{filename}' not found.")
-        return {"Error": 0.0}
+        return {"Error": 0}
     except Exception as e:
         print(f"An error occurred while reading the file: {e}")
-        return {"Error": 0.0}
+        return {"Error": 0}
 
     if not data:  # Check if any numeric data was successfully parsed
-        return {"Error": 0.0}
+        return {"Error": 0}
 
     minimum = min(data)
     maximum = max(data)

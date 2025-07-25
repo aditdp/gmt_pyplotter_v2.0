@@ -1160,18 +1160,18 @@ class GrdOptions:
     ]
 
     __unit = {
-        "@earth_relief_": "m",
-        "@earth_synbath_": "m",
-        "@earth_gebco_": "m",
-        "@earth_age_": "Myr",
-        "@earth_day_": "",
-        "@earth_night": "",
-        "@earth_mag_": "nTesla",
-        "@earth_mag4km_": "nTesla",
-        "@earth_wdmam_": "nTesla",
-        "@earth_vgg_": "Eotvos",
-        "@earth_faa_": "mGal",
-        "@earth_faaerror_": "mGal",
+        "@earth_relief_": ("m", "Elevation"),
+        "@earth_synbath_": ("m", "Elevation"),
+        "@earth_gebco_": ("m", "Elevation"),
+        "@earth_age_": ("Myr", '"Seafloor Age"'),
+        "@earth_day_": ("", ""),
+        "@earth_night": ("", ""),
+        "@earth_mag_": ("nTesla", '"Magnetic Anomalies at sea-level"'),
+        "@earth_mag4km_": ("nTesla", '"Magnetic Anomalies at 4km altitude"'),
+        "@earth_wdmam_": ("nTesla", '"Magnetic Anomalies"'),
+        "@earth_vgg_": ("Eotvos", '"Gravity Gradient Anomalies"'),
+        "@earth_faa_": ("mGal", '"Gravity Anomalies"'),
+        "@earth_faaerror_": ("mGal", '"Gravity Anomalies Errors"'),
     }
 
     __grd_codes = [
@@ -1294,7 +1294,11 @@ class GrdOptions:
 
     @property
     def unit(self):
-        return self.__unit[self.grd.get()]
+        return self.__unit[self.grd.get()][0]
+
+    @property
+    def type(self):
+        return self.__unit[self.grd.get()][1]
 
 
 class ColorOptions:
@@ -3018,22 +3022,77 @@ class Legend:
         self.legend_colorbar_depth = BooleanVar(tab, value=False)
 
         keys = ["frame", "title", "dates", "counts", "eq", "fm", "depth", "z"]
-        self.toggle = {key: BooleanVar(self.tab) for key in keys}
+        self.toggle = {key: BooleanVar(self.tab, True) for key in keys}
         self.parameter_legend()
+        self._widget_toggle_state()
 
-    def _legend_available(self):
+    def _widget_toggle_eq(self):
         if hasattr(self.main.get_layers, "earthquake"):
             self.eq = self.main.get_layers.earthquake
-            if self.eq.depth_data is not None and self.eq.mag_data is not None:
-                self.legend_eq.set(True)
-                self.legend_colorbar_depth.set(True)
+            if self.widgets[4].cget("state") == DISABLED:
+                self.widgets[4].configure(state=NORMAL)
+                self.widgets[4].select()
+        else:
+            if self.widgets[4].cget("state") == NORMAL:
+                self.widgets[4].configure(state=DISABLED)
+                self.widgets[4].deselect()
+        self._widget_toggle_date_count()
+
+    def _widget_toggle_fm(self):
         if hasattr(self.main.get_layers, "focmec"):
             self.fm = self.main.get_layers.focmec
-            if self.fm.depth_data is not None and self.fm.mag_data is not None:
-                self.legend_fm.set(True)
-                self.legend_colorbar_depth.set(True)
-        if hasattr(self.main.get_layers, "gridmage"):
-            self.legend_colorbar_elev.set(True)
+            if self.widgets[5].cget("state") == DISABLED:
+                self.widgets[5].configure(state=NORMAL)
+                self.widgets[5].select()
+        else:
+            if self.widgets[5].cget("state") == NORMAL:
+                self.widgets[5].configure(state=DISABLED)
+                self.widgets[5].deselect()
+        self._widget_toggle_date_count()
+
+    def _widget_toggle_date_count(self):
+        if hasattr(self.main.get_layers, "earthquake") or hasattr(
+            self.main.get_layers, "focmec"
+        ):
+            for i in 2, 3, 6:
+                if self.widgets[i].cget("state") == DISABLED:
+                    self.widgets[i].configure(state=NORMAL)
+                    self.widgets[i].select()
+        else:
+            for i in 2, 3, 6:
+                if self.widgets[i].cget("state") == NORMAL:
+                    self.widgets[i].configure(state=DISABLED)
+                    self.widgets[i].deselect()
+
+    def _widget_toggle_grd(self):
+        if hasattr(self.main.get_layers, "grdimage"):
+            if self.widgets[7].cget("state") == DISABLED:
+                self.widgets[7].configure(state=NORMAL)
+                self.widgets[7].select()
+        else:
+            if self.widgets[7].cget("state") == NORMAL:
+                self.widgets[7].configure(state=DISABLED)
+                self.widgets[7].deselect()
+
+    def _widget_toggle_state(self):
+        self._widget_toggle_eq()
+        self._widget_toggle_fm()
+        self._widget_toggle_grd()
+
+        if (
+            hasattr(self.main.get_layers, "earthquake")
+            or hasattr(self.main.get_layers, "focmec")
+            or hasattr(self.main.get_layers, "grdimage")
+        ):
+            for i in 0, 1:
+                if self.widgets[i].cget("state") == DISABLED:
+                    self.widgets[i].configure(state=NORMAL)
+                    self.widgets[i].deselect()
+        else:
+            for i in 0, 1:
+                if self.widgets[i].cget("state") == NORMAL:
+                    self.widgets[i].configure(state=DISABLED)
+                    self.widgets[i].deselect()
 
     def checkbox(self, text: str, key):
         return CTkCheckBox(
@@ -3047,6 +3106,7 @@ class Legend:
             onvalue=True,
             offvalue=False,
             width=50,
+            # text_color_disabled="gray20",
         )
         # disable box color fg_color="gray"
 
@@ -3105,23 +3165,27 @@ class Legend:
     @property
     def ball_space(self):
 
-        if self.toggle["eq"] and self.toggle["fm"]:
+        if self.toggle["eq"].get() and self.toggle["fm"].get():
+            print("eq dan fm active")
             space_eq = self.eq_mag_max**2 * self.eq.eq_scaler / 3
-            space_fm = self.fm_mag_max * self.fm.fm_scaller / 5
+            space_fm = self.fm_mag_max * self.fm.fm_scaller / 15
             space = max(space_eq, space_fm)
-        elif self.toggle["eq"] and not self.toggle["fm"]:
+        elif self.toggle["eq"].get() and not self.toggle["fm"].get():
+            print("eq aja")
             space = self.eq_mag_max**2 * self.eq.eq_scaler / 3
-        elif self.toggle["fm"] and not self.toggle["eq"]:
-            space = self.fm_mag_max * self.fm.fm_scaller / 5
+        elif self.toggle["fm"].get() and not self.toggle["eq"].get():
+            print("fm aja")
+            space = self.fm_mag_max * self.fm.fm_scaller / 15
         else:
             space = 0.2
-        return f"G {space}c"
+        return f"G {space:.2f}c\n"
 
     @property
     def ball_column(self):
+        map_width = float(self.main.get_projection.proj_width.get())
         mag_ball_col = "N 1 "
         n2 = 1
-        if self.toggle["eq"]:
+        if self.toggle["eq"].get():
             self.eq_td = 0
             for i in range(self.eq_mag_min, self.eq_mag_max + 1):
                 diameter = i * i * self.eq.eq_scaler + 0.5
@@ -3130,7 +3194,7 @@ class Legend:
                 n2 += diameter
             n2 += 1
             mag_ball_col += "1 "
-        if self.toggle["fm"]:
+        if self.toggle["fm"].get():
             self.fm_td = 0
             for i in range(self.fm_mag_min, self.fm_mag_max + 1):
                 diameter = i * self.fm.fm_scaller / 5 + 0.5
@@ -3139,20 +3203,33 @@ class Legend:
                 n2 += diameter
             n2 += 1
             mag_ball_col += "1 "
-        mag_ball_col += f"{n2} "
+        if n2 * 2 > map_width:
+            self.short_colorbar = map_width - n2
+            print("\n\nshort colorbar\n\n")
+            n2 = self.short_colorbar
+
+        else:
+            try:
+                del self.short_colorbar
+                print("\n\n deleting short colorbar\n\n")
+            except AttributeError:
+                print("\n\nga ada short colorbar\n\n")
+                pass
+
+        mag_ball_col += f"{n2} \n"
         return mag_ball_col
 
     @property
     def ball_legend(self):
         L = "L - \n"
         mag_ball = L
-        if self.toggle["eq"]:
+        if self.toggle["eq"].get():
             for i in range(self.eq_mag_min, self.eq_mag_max + 1):
-                mag_ball += f"S C c {i*i*self.eq.eq_scaler}c - faint,grey30 -\n"
+                mag_ball += f"S C c {i*i*self.eq.eq_scaler:.2f}c - faint,grey30 -\n"
             mag_ball += L
-        if self.toggle["fm"]:
+        if self.toggle["fm"].get():
             for i in range(self.fm_mag_min, self.fm_mag_max + 1):
-                mag_ball += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5}c - faint,grey30 -\n"
+                mag_ball += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5:.2f}c - faint,grey30 -\n"
 
             mag_ball += L
 
@@ -3161,13 +3238,13 @@ class Legend:
     @property
     def ball_text(self):
         bot_label = "L -\n"
-        if self.toggle["eq"]:
+        if self.toggle["eq"].get():
             for i in range(self.eq_mag_min, self.eq_mag_max + 1):
-                bot_label += f"L 10p,Helvetica C M {i} \n"
+                bot_label += f"L 10p,Helvetica C M{i} \n"
             bot_label += "L -\n"
-        if self.toggle["fm"]:
+        if self.toggle["fm"].get():
             for i in range(self.fm_mag_min, self.fm_mag_max + 1):
-                bot_label += f"L 10p,Helvetica C M {i} \n"
+                bot_label += f"L 10p,Helvetica C M{i} \n"
             bot_label += "L -\n"
         return bot_label
 
@@ -3175,17 +3252,18 @@ class Legend:
     def counts_legend(self):
         top_label_col = ""
         top_label = ""
-        if self.toggle["eq"] and not self.toggle["fm"]:
-            top_label_col = f"N 2"
-            top_label = f"L 10p,Helvetica c Earthquakes\nL -\nL 10pHelvetica c {self.eq.mag_data['count']} events"
+        if self.toggle["eq"].get() and not self.toggle["fm"].get():
+            top_label_col = f"N 2\n"
+            top_label = f"L 10p,Helvetica c Earthquakes\nL -\nL 10p,Helvetica c {self.eq.mag_data['count']} events\n"
 
-        if self.toggle["fm"] and not self.toggle["eq"]:
-            top_label_col = f"N 2"
-            top_label = f"L 10p,Helvetica c Focal Mechanism\nL -\nL 10Helvetica c {self.fm.mag_data['count']} events"
-        if self.toggle["eq"] and self.toggle["fm"]:
-            top_label_col = (
-                f"N 1 {self.eq_td} 1 {self.fm_td} 1 {self.eq_td+self.fm_td+3}"
-            )
+        elif self.toggle["fm"].get() and not self.toggle["eq"].get():
+            top_label_col = f"N 2\n"
+            top_label = f"L 10p,Helvetica c Focal Mechanism\nL -\nL 10Helvetica c {self.fm.mag_data['count']} events\n"
+        elif self.toggle["eq"].get() and self.toggle["fm"].get():
+            n2 = self.eq_td + self.fm_td + 3
+            if hasattr(self, "short_colorbar"):
+                n2 = self.short_colorbar
+            top_label_col = f"N 1 {self.eq_td:.2f} 1 {self.fm_td:.2f} 1 {n2:.2f}\n"
             top_label = f"""L -
 L 10p,Helvetica c Earthquakes 
 L -
@@ -3203,12 +3281,37 @@ G 0.2c
         return top_label_col + top_label
 
     @property
+    def legend_width(self):
+        map_width = float(self.main.get_projection.proj_width.get())
+        if (
+            self.toggle["z"].get()
+            and not self.toggle["eq"].get()
+            and not self.toggle["fm"].get()
+        ):
+            return map_width * 0.3 + 2
+        width = 1
+        if hasattr(self, "eq_td"):
+            width += self.eq_td + 1
+        if hasattr(self, "fm_td"):
+            width += self.fm_td + 1
+        if width < 0.3 * map_width + 3:
+            width = map_width * 0.3 + 3
+        if hasattr(self, "short_colorbar"):
+            print("\n\n dari legend width short colorbar\n\n")
+            width += self.short_colorbar
+        else:
+            width *= 2
+        return round(width, 0)
+
+    @property
     def dates_legend(self):
-        if not self.toggle["dates"]:
+        if not self.toggle["dates"].get():
             return ""
-        try:
+        if hasattr(self.main.get_layers, "earthquake"):
             legend_date = f"{self.eq.date_strp[0].strftime('%b %d,%Y')}\nL -\nL 10p,Helvetica C to {self.eq.date_strp[1].strftime('%b %d, %Y')}"
-        except AttributeError:
+        elif hasattr(self.main.get_layers, "focmec"):
+            legend_date = f"{self.fm.date_strp[0].strftime('%b %d,%Y')}\nL -\nL 10p,Helvetica C to {self.fm.date_strp[1].strftime('%b %d, %Y')}"
+        else:
             legend_date = "--- to ---"
         return legend_date
 
@@ -3217,164 +3320,86 @@ G 0.2c
         date = ""
         count = ""
         ball = ""
-        if self.toggle["title"]:
-            title = "H 12p,Helvetica-Bold L E G E N D\nG 0.5c"
-        if self.toggle["dates"]:
-            date = f"N 2\nL 10p,Helvetica C Data during {self.dates_legend}\nG 0.3c"
-        if self.toggle["counts"]:
-            count = self.counts_legend
-        if self.toggle["eq"] or self.toggle["fm"]:
+        if self.toggle["eq"].get() or self.toggle["fm"].get():
             ball_space = self.ball_space
             ball_col = self.ball_column
             ball_leg = self.ball_legend
             ball_text = self.ball_text
             ball = ball_col + ball_space + ball_leg + ball_space + ball_text
+        if self.toggle["title"].get():
+            title = "H 12p,Helvetica-Bold L E G E N D\nG 0.5c\n"
+        if self.toggle["dates"].get():
+            date = f"N 2\nL 10p,Helvetica C Data during {self.dates_legend}\nG 0.3c\n"
+        if self.toggle["counts"].get():
+            count = self.counts_legend
+
         legend_text = title + date + count + ball
         file_writer(f"{self.dir_name}-LEGEND.txt", "w", legend_text)
 
+    @property
+    def depth_ow(self):
+        """Offset and width of earthquake depth scalebar legend: tuple[offset, width]"""
+        offset_x = f"{self.legend_width*0.25}c"
+        if not self.toggle["z"].get():
+            offset_y = ""
+
+        offset = f"+oc/c"
+        width = f"+wc"
+        return offset, width
+
+    @property
     def depth_legend(self):
-        pass
-
-    def z_legend(self):
-        pass
-
-    def legend_constructor(self):
-        """try horizontal legend first"""
-        eq = "No"
-        fm = "No"
-        el = "No"
+        cpt_depth_interval = 50
         min_depth = 0
-        legend_date = ""
-        legend_plot = ""
-        legend_width = 0
-        depth_colorbar_plot = ""
-        elev_colorbar_plot = ""
-        top_label_col = ""
-        top_label = ""
-        mag_ball = ""
-        mag_ball_space = "0.2"
-        mag_ball_col = ""
-        bot_label = ""
-        # magic
-        legend_file = f"{self.name}-LEGEND.txt"
-        # if hasattr(self.main.get_layers, "earthquake"):
-        # ada data gempa
-        if (
-            hasattr(self.main.get_layers, "earthquake")
-            and "Error" not in self.main.get_layers.earthquake.depth_data.keys()
-        ):
-            self.eq = self.main.get_layers.earthquake
-            eq = "Yes"
-
-            if "trim_min" in self.eq.depth_data:
-                min_depth = self.eq.depth_data["trim_min"]
-            else:
-                min_depth = self.eq.depth_data["min"]
-            legend_width = round(
-                float(self.main.get_projection.proj_width.get()) * 0.75
-            )
-
-            # Old ball_col
-            # mag_ball_col = "N 0.5 1 " + "1 " * eq_mag_range + str(eq_mag_range + 1.5)
-
-            bot_label = "L -\n"
-            for i in range(eq_mag_min, eq_mag_max + 1):
-                bot_label += f"L 10p,Helvetica C M {i} \n"
-                if i == eq_mag_max:
-                    bot_label += "L - \n"
-            # ada dua duanya
-            if hasattr(self.main.get_layers, "focmec"):
-                self.fm = self.main.get_layers.focmec
-                fm = "Yes"
-                legend_width = float(self.main.get_projection.proj_width.get())
-                self.plot_beachball()
-                legend_date = f"{self.eq.date_strp[0].strftime('%b %d, %Y')} to {self.eq.date_strp[1].strftime('%b %d, %Y')}"
-                fm_mag_min = round(self.fm.mag_data["min"])
-                fm_mag_max = round(self.fm.mag_data["max"])
-                fm_mag_range = fm_mag_max - fm_mag_min + 1
-
-                mag_ball_col = (
-                    "N 0.5 1 1 "
-                    + "1 " * (eq_mag_range + fm_mag_range)
-                    + str(eq_mag_range + 2.5 + fm_mag_range)
-                )
-
-                for i in range(fm_mag_min, fm_mag_max + 1):
-                    mag_ball += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5}c - faint,grey30 -\n"
-                    if i == fm_mag_max:
-                        mag_ball += "L -\n"
-
-                for i in range(fm_mag_min, fm_mag_max + 1):
-                    bot_label += f"L 10p,Helvetica C M {i}\n"
-                    if i == fm_mag_max:
-                        bot_label += "L -\n"
-        # ada focmec aja
-        elif hasattr(self.main.get_layers, "focmec"):
-            self.fm = self.main.get_layers.focmec
-            fm = "Yes"
+        if self.toggle["eq"].get():
+            cpt_depth_interval = self.eq.cpt_interval
+            min_depth = round(self.eq.depth_data["min"], -1)
+        elif self.toggle["fm"].get():
+            cpt_depth_interval = self.fm.cpt_interval
             min_depth = round(self.fm.depth_data["min"], -1)
-            self.plot_beachball()
-            legend_date = f"{self.fm.date_strp[0].strftime('%b %d, %Y')}\nL -\nL 10p,Helvetica C to {self.fm.date_strp[1].strftime('%b %d, %Y')}"
-            fm_mag_min = round(self.fm.mag_data["min"])
-            fm_mag_max = round(self.fm.mag_data["max"]) + 1
-            fm_mag_range = fm_mag_max - fm_mag_min + 1
-            legend_width = round(
-                float(self.main.get_projection.proj_width.get()) * 0.75
-            )
 
-            bot_label = "L -\n"
-            for i in range(fm_mag_min, fm_mag_max + 1):
-                bot_label += f"L 10p,Helvetica C M {i}\n"
-            bot_label += "L - \n"
-        # write_legend
-        if "Yes" in (eq, fm):
-            legend_text = f"""# script for plot legend 
-H 12p,Helvetica-Bold L E G E N D
-G 0.5c
-N 2
-L 10p,Helvetica C Data during {legend_date}
-G 0.3c
-{top_label_col}
-{top_label}
-G 0.2c
-{mag_ball_col}
-G {mag_ball_space}c
-{mag_ball}
-G {mag_ball_space}c
-{bot_label}
-G 0.1c"""
-            file_writer(f"{self.dir_name}-LEGEND.txt", "w", legend_text)
+        depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
 
-            legend_plot = f"\tgmt legend -DJBC+o0c/1c+w{legend_width}c -F+p1p+gwhite+r {legend_file}\n"
-            if hasattr(self, "eq"):
-                cpt_depth_interval = self.eq.cpt_interval
-            else:
-                cpt_depth_interval = self.fm.cpt_interval
-            depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
-            depth_colorbar_plot = f"\tgmt colorbar -DJBC+o{legend_width*0.25}c/2.3c+w{legend_width*0.3}c+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
-        # Ada grdimage
-        if hasattr(self.main.get_layers, "grdimage"):
-            el = "Yes"
-            offset = "0c/1c"
-            font = "12p"
-            width = float(self.main.get_projection.proj_width.get()) * 0.3
-            if "Yes" in (fm, eq):
-                offset = f"{legend_width*0.25}c/4.5c"
-                font = "10p"
-                width = legend_width * 0.3
-            # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+        depth_colorbar_plot = f"\tgmt colorbar -DJBC{self.depth_ow[0]}{self.depth_ow[1]}+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
+        return depth_colorbar_plot
 
-            elev_label = (
-                f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
-            )
-            elev_colorbar_plot = f"\tgmt colorbar -DJBC+o{offset}+w{width}c+h -C{self.name}-elev.cpt {elev_label}"
+    @property
+    def z_legend(self):
+        cpt = self.main.get_layers.grdimage.grdimg_cpt_color.get()
+        if not self.toggle["z"].get():
+            return ""
+        offset = "+o0c/1c"
+        font = "12p"
+        width = float(self.main.get_projection.proj_width.get()) * 0.3
+        if self.toggle["title"].get():
+            offset = "+o0c/2c"
+        if self.toggle["eq"].get() or self.toggle["fm"].get():
 
-        self.added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
+            offset = f"+o{self.legend_width*0.25}c/4.5c"
+            width = self.legend_width * 0.3
+        if hasattr(self, "short_colorbar"):
+            width = self.short_colorbar - 2
+            offset = f"+o{self.legend_width-self.short_colorbar-(self.short_colorbar/2)}c/4.5c"
+        # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font}--MAP_FRAME_PEN=0.75p\n"
+        elev_label = (
+            f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
+        )
+        elev_colorbar_plot = (
+            f"\tgmt colorbar -DJBC{offset}+w{width}c+h -C{cpt} {elev_label}"
+        )
+        return elev_colorbar_plot
 
     @property
     def script(self):
+
+        pen = ""
+        if self.toggle["frame"].get():
+            pen = "+p1p"
+
+        legend_file = f"{self.main.get_name.name}-LEGEND.txt"
         self.legend_creator()
-        pass
+        width = self.legend_width
+
         # if hasattr(self.main.get_layers, "grdimage"):
         #     el = "Yes"
         #     offset = "0c/1c"
@@ -3391,7 +3416,21 @@ G 0.1c"""
         #     )
         #     elev_colorbar_plot = f"\tgmt colorbar -DJBC+o{offset}+w{width}c+h -C{self.name}-elev.cpt {elev_label}"
 
-        # legend_plot = f"\tgmt legend -DJBC+o0c/1c+w{legend_width}c -F+p1p+gwhite+r {legend_file}\n"
+        legend_plot = (
+            f"gmt legend -DJBC+o0c/1c+w{width}c -F{pen}+gwhite+r {legend_file}\n"
+        )
+
+        if (
+            self.toggle["z"].get()
+            and not self.toggle["eq"].get()
+            and not self.toggle["fm"].get()
+        ):
+            legend_plot = (
+                f"gmt legend -DJBC+o0c/1c+w{width}c/3c -F{pen}+gwhite+r {legend_file}\n"
+            )
+            if not self.toggle["title"].get():
+                legend_plot = ""
+
         #     if hasattr(self, "eq"):
         #         cpt_depth_interval = self.eq.cpt_interval
         #     else:
@@ -3400,7 +3439,7 @@ G 0.1c"""
         #     depth_colorbar_plot = f"\tgmt colorbar -DJBC+o{legend_width*0.25}c/2.3c+w{legend_width*0.3}c+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
 
         # self.added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
-        # return self.added_gmt_script
+        return f"{legend_plot}{self.z_legend}"
 
 
 class Cosmetics(ColorOptions):
