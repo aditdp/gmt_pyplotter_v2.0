@@ -77,7 +77,7 @@ def find_numeric_stats(
     filename: str,
     column_index: int,
     delimiter: str = "\t",
-    trim_percentage: float = 0.05,
+    trim_percentage: float = 0.01,
 ) -> dict[str, float | int]:
     """
     Analyzes a specified column in a delimited file to find min, max, count, and range

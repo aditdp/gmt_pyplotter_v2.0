@@ -60,9 +60,11 @@ class MainApp(ctk.CTk):
         output_dir = self.load_state()
 
         self.frame_map_param = CTkFrame(self, width=210, height=550)
-        self.frame_layers = CTkFrame(self, width=490, height=550)
-        self.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
-        self.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
+        self.frame_layers = CTkFrame(self, width=480, height=550)
+        # self.frame_map_param.place(x=0, y=0, relwidth=0.3, relheight=1)
+        # self.frame_layers.place(relx=0.3, y=0, relwidth=0.7, relheight=1)
+        self.frame_map_param.pack(side="left", expand=True, fill="both")
+        self.frame_layers.pack(side="left", expand=False, fill="both")
         self.date_constructor()
         self.get_name = MapFileName(self, self.frame_map_param, output_dir)
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
@@ -568,7 +570,7 @@ class LayerMenu:
         self.button_frame = CTkFrame(
             mainframe, fg_color="transparent", width=490, height=10
         )
-        self.button_frame.pack(side="top", pady=0, fill="both", expand=True)
+        self.button_frame.pack(side="top", pady=0, fill="both", expand=False)
 
         self.layer_control = ctk.CTkTabview(
             mainframe,
@@ -837,19 +839,18 @@ class MapPreview:
         cur_y = self.main.winfo_y()
 
         new_width = self.loading_image()
-
         resize = f"{new_width}x550+{cur_x}+{cur_y}"
 
         self.main.geometry(resize)
 
         self.main.frame_map_param.pack(side="left", expand=True, fill="both")
-        self.main.frame_layers.pack(side="left", expand=True, fill="both")
+        self.main.frame_layers.pack(side="left", expand=False, fill="both")
 
         print(f"rel frame layer width= {210/new_width}")
-        self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 700)
+        self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 680)
 
         self.frame_preview.pack(side="left", fill="both", anchor="nw")
-        self.canvas = Canvas(self.frame_preview, width=new_width - 700, height=550)
+        self.canvas = Canvas(self.frame_preview, width=new_width - 680, height=550)
         self.canvas.pack(expand=True, fill="both")
         self.button_preview_refresh.pack(side="left")
         self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
@@ -1109,7 +1110,7 @@ class MapPreview:
         image = Image.open(self.main.get_name.dir_prename_map)
         ratio = image.width / image.height
         new_width = int(700 + (ratio * 550))
-        image_resize = image.resize((int((new_width - 710)), int(545)))
+        image_resize = image.resize((int((new_width - 710)), int(540)))
         self.imagetk = ImageTk.PhotoImage(image_resize)
         return new_width
 
@@ -3008,10 +3009,6 @@ class Legend:
 
     def __init__(self, tab, main: MainApp):
         self.main = main
-        self.tab = tab
-        for i in range(15):
-            self.tab.rowconfigure(i, weight=1)
-
         self.name = self.main.get_name.name
         self.dir_name = self.main.get_name.dir_name
 
@@ -3022,9 +3019,11 @@ class Legend:
         self.legend_colorbar_depth = BooleanVar(tab, value=False)
 
         keys = ["frame", "title", "dates", "counts", "eq", "fm", "depth", "z"]
-        self.toggle = {key: BooleanVar(self.tab, True) for key in keys}
+        self.toggle = {key: BooleanVar(tab, True) for key in keys}
+        _, self.tab = self.main.get_layers.tab_menu_layout_divider(tab)
         self.parameter_legend()
         self._widget_toggle_state()
+        self.main.after(100, self._widget_toggle_state)
 
     def _widget_toggle_eq(self):
         if hasattr(self.main.get_layers, "earthquake"):
@@ -3087,12 +3086,13 @@ class Legend:
             for i in 0, 1:
                 if self.widgets[i].cget("state") == DISABLED:
                     self.widgets[i].configure(state=NORMAL)
-                    self.widgets[i].deselect()
+                    self.widgets[i].select()
         else:
             for i in 0, 1:
                 if self.widgets[i].cget("state") == NORMAL:
                     self.widgets[i].configure(state=DISABLED)
                     self.widgets[i].deselect()
+        self.main.after(1000, self._widget_toggle_state)
 
     def checkbox(self, text: str, key):
         return CTkCheckBox(
@@ -3133,7 +3133,7 @@ class Legend:
         ]
 
         for i, widget in enumerate(self.widgets):
-            widget.grid(column=0, row=i + 1, sticky="w", padx=150)
+            widget.grid(column=0, row=i + 1, sticky="w")
 
     def plot_beachball(self):
         beach_ball = f"""gmt begin {self.dir_name}-fm eps\n\techo 1.5 1.5 50 163 80 -21 6 0 0 | gmt meca -R1/2/1/2 -JM10c -Sa1c -Ggrey40 -E-\ngmt end\n"""
@@ -3228,6 +3228,7 @@ class Legend:
                 mag_ball += f"S C c {i*i*self.eq.eq_scaler:.2f}c - faint,grey30 -\n"
             mag_ball += L
         if self.toggle["fm"].get():
+            self.plot_beachball()
             for i in range(self.fm_mag_min, self.fm_mag_max + 1):
                 mag_ball += f"S C k{self.name}-fm.eps {i*self.fm.fm_scaller/5:.2f}c - faint,grey30 -\n"
 
@@ -3250,6 +3251,7 @@ class Legend:
 
     @property
     def counts_legend(self):
+        top_label_col = ""
         top_label_col = ""
         top_label = ""
         if self.toggle["eq"].get() and not self.toggle["fm"].get():
@@ -3294,8 +3296,8 @@ G 0.2c
             width += self.eq_td + 1
         if hasattr(self, "fm_td"):
             width += self.fm_td + 1
-        if width < 0.3 * map_width + 3:
-            width = map_width * 0.3 + 3
+        if width < 0.3 * map_width:
+            width = map_width * 0.3
         if hasattr(self, "short_colorbar"):
             print("\n\n dari legend width short colorbar\n\n")
             width += self.short_colorbar
@@ -3339,18 +3341,56 @@ G 0.2c
     @property
     def depth_ow(self):
         """Offset and width of earthquake depth scalebar legend: tuple[offset, width]"""
-        offset_x = f"{self.legend_width*0.25}c"
-        if not self.toggle["z"].get():
-            offset_y = ""
+        offset_x = self.legend_width * 0.2
+        offset_y = 1.2
+        width = self.legend_width * 0.4
+        if self.toggle["title"].get():
+            offset_y += 1
+        if hasattr(self, "short_colorbar"):
+            width = self.short_colorbar - 2.2
+            offset_x = (
+                self.legend_width
+                - self.short_colorbar
+                - (self.short_colorbar / 2)
+                - 0.5
+            )
+        return f"+o{offset_x}c/{offset_y}c", f"+w{width}c"
 
-        offset = f"+oc/c"
-        width = f"+wc"
-        return offset, width
+    @property
+    def z_ow(self):
+        """Offset and width of grdimage scalebar legend: tuple[offset, width]"""
+        offset_x = 0
+        offset_y = 1.2
+        width = float(self.main.get_projection.proj_width.get()) * 0.3
+        if self.toggle["title"].get():
+            offset_y += 1
+        # if self.toggle["counts"].get():
+        #     offset_y += 1.3
+        # if self.toggle["dates"]:
+        #     offset_y += 0.9
+        if self.toggle["eq"].get() or self.toggle["fm"].get():
+            offset_x = self.legend_width * 0.2
+            width = self.legend_width * 0.4
+        if self.toggle["depth"].get():
+            offset_y += 2
+        if hasattr(self, "short_colorbar"):
+            width = self.short_colorbar - 2.5
+            offset_x = (
+                self.legend_width
+                - self.short_colorbar
+                - (self.short_colorbar / 2)
+                - 0.5
+            )
+
+        return f"+o{offset_x}c/{offset_y}c", f"+w{width}c"
 
     @property
     def depth_legend(self):
+        if not self.toggle["depth"].get():
+            return ""
         cpt_depth_interval = 50
         min_depth = 0
+        offset, width = self.depth_ow
         if self.toggle["eq"].get():
             cpt_depth_interval = self.eq.cpt_interval
             min_depth = round(self.eq.depth_data["min"], -1)
@@ -3358,36 +3398,39 @@ G 0.2c
             cpt_depth_interval = self.fm.cpt_interval
             min_depth = round(self.fm.depth_data["min"], -1)
 
-        depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
+        depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=12p --MAP_FRAME_PEN=0.75p\n"
 
-        depth_colorbar_plot = f"\tgmt colorbar -DJBC{self.depth_ow[0]}{self.depth_ow[1]}+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
+        depth_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
         return depth_colorbar_plot
 
     @property
     def z_legend(self):
-        cpt = self.main.get_layers.grdimage.grdimg_cpt_color.get()
         if not self.toggle["z"].get():
             return ""
-        offset = "+o0c/1c"
+        cpt = self.main.get_layers.grdimage.grdimg_cpt_color.get()
         font = "12p"
-        width = float(self.main.get_projection.proj_width.get()) * 0.3
-        if self.toggle["title"].get():
-            offset = "+o0c/2c"
-        if self.toggle["eq"].get() or self.toggle["fm"].get():
 
-            offset = f"+o{self.legend_width*0.25}c/4.5c"
-            width = self.legend_width * 0.3
-        if hasattr(self, "short_colorbar"):
-            width = self.short_colorbar - 2
-            offset = f"+o{self.legend_width-self.short_colorbar-(self.short_colorbar/2)}c/4.5c"
+        offset, width = self.z_ow
         # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font}--MAP_FRAME_PEN=0.75p\n"
         elev_label = (
             f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
         )
         elev_colorbar_plot = (
-            f"\tgmt colorbar -DJBC{offset}+w{width}c+h -C{cpt} {elev_label}"
+            f"\tgmt colorbar -DJBC{offset}{width}+h -C{cpt} {elev_label}"
         )
         return elev_colorbar_plot
+
+    @property
+    def height(self):
+        height = ""
+        if self.toggle["title"].get():
+
+            height = ""
+        if self.toggle["depth"].get() or self.toggle["z"].get():
+            height = "/3c"
+        if self.toggle["depth"].get() and self.toggle["z"].get():
+            height = "/5c"
+        return height
 
     @property
     def script(self):
@@ -3400,25 +3443,7 @@ G 0.2c
         self.legend_creator()
         width = self.legend_width
 
-        # if hasattr(self.main.get_layers, "grdimage"):
-        #     el = "Yes"
-        #     offset = "0c/1c"
-        #     font = "12p"
-        #     width = float(self.main.get_projection.proj_width.get()) * 0.3
-        #     if "Yes" in (fm, eq):
-        #         offset = f"{legend_width*0.25}c/4.5c"
-        #         font = "10p"
-        #         width = legend_width * 0.3
-        #     # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
-
-        #     elev_label = (
-        #         f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
-        #     )
-        #     elev_colorbar_plot = f"\tgmt colorbar -DJBC+o{offset}+w{width}c+h -C{self.name}-elev.cpt {elev_label}"
-
-        legend_plot = (
-            f"gmt legend -DJBC+o0c/1c+w{width}c -F{pen}+gwhite+r {legend_file}\n"
-        )
+        legend_plot = f"gmt legend -DJBC+o0c/1c+w{width}c{self.height} -F{pen}+gwhite+r {legend_file}\n"
 
         if (
             self.toggle["z"].get()
@@ -3431,15 +3456,7 @@ G 0.2c
             if not self.toggle["title"].get():
                 legend_plot = ""
 
-        #     if hasattr(self, "eq"):
-        #         cpt_depth_interval = self.eq.cpt_interval
-        #     else:
-        #         cpt_depth_interval = self.fm.cpt_interval
-        #     depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=10p --MAP_FRAME_PEN=0.75p\n"
-        #     depth_colorbar_plot = f"\tgmt colorbar -DJBC+o{legend_width*0.25}c/2.3c+w{legend_width*0.3}c+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
-
-        # self.added_gmt_script = legend_plot + depth_colorbar_plot + elev_colorbar_plot
-        return f"{legend_plot}{self.z_legend}"
+        return f"{legend_plot}{self.depth_legend}{self.z_legend}"
 
 
 class Cosmetics(ColorOptions):
