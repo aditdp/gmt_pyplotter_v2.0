@@ -66,6 +66,7 @@ class MainApp(ctk.CTk):
         self.frame_map_param.pack(side="left", expand=True, fill="both")
         self.frame_layers.pack(side="left", expand=False, fill="both")
         self.date_constructor()
+        self.fix_depth_scale = BooleanVar(self, value=False)
         self.get_name = MapFileName(self, self.frame_map_param, output_dir)
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
         self.get_projection = MapProjection(self, self.frame_map_param)
@@ -1757,13 +1758,15 @@ class GrdImage(ColorOptions):
     def script(self):
         remote_data = f"{self.grd.get()}{self.res.get()}"
         shade = ""
-        mask = ""
+        limit = ""
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
         if self.masking.get():
-            mask = f"\ngmt coast -S{self.masking_color.get()}"
+            limit = f"-L0/- -M --COLOR_BACKGROUND={self.masking_color.get()}"
+        cpt_file = f"{self.main.get_name.name}-Z.cpt"
+        grd2cpt = f"gmt grd2cpt {remote_data} {self.main.get_coordinate.coord_r} -C{self.grdimg_cpt_color.get()} {limit} -Z -H > {cpt_file}\n"
 
-        return f"gmt grdimage {remote_data} {shade} -C{self.grdimg_cpt_color.get()} {mask} "
+        return f"{grd2cpt}gmt grdimage {remote_data} {shade} -C{cpt_file} "
 
 
 class Contour(ColorOptions):
@@ -2150,10 +2153,10 @@ class Earthquake(LayerMenu):
         self.main = main
         self.eq_catalog = StringVar(tab, value="USGS")
         self.dates = dates
-        print(f"dari init = {self.dates[0].get()}")
         self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = ctk.DoubleVar(tab, 1)
+        self.already_downloaded = BooleanVar(tab, value=False)
         self.download_queue = queue.Queue()
         labels = {
             "Catalog": "",
@@ -2162,15 +2165,17 @@ class Earthquake(LayerMenu):
             "Magnitude": "",
             "Depth": "",
             "Size": "",
+            "Depth scale": "",
         }
-        text, opti = self.tab_menu_layout_divider(tab)
+        text, self.opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
-        self.parameter_catalog_source(opti, 1)
-        self.parameter_date(opti, 2)
+        self.parameter_catalog_source(self.opti, 1)
+        self.parameter_date(self.opti, 2)
 
-        self.parameter_magnitude_range(opti, 4)
-        self.parameter_depth_range(opti, 5)
-        self.parameter_eq_size(opti, 6)
+        self.parameter_magnitude_range(self.opti, 4)
+        self.parameter_depth_range(self.opti, 5)
+        self.parameter_eq_size(self.opti, 6)
+        self.parameter_depth_scale(self.opti, 7)
         self.button_downloader(tab)
         self.button_show_catalog(tab)
         self.add_tracers()
@@ -2193,17 +2198,17 @@ class Earthquake(LayerMenu):
             except TclError as e:
                 print(f"error removing trace {trace_id} from {var}: {e}")
 
-    def _check_queue(self):
-        try:
-            message_type, *data = self.download_queue.get_nowait()
-            if message_type == "COMPLETE":
-                success_status, message = data
-                self.download_button.configure(state=NORMAL)
+    # def _check_queue(self):
+    #     try:
+    #         message_type, *data = self.download_queue.get_nowait()
+    #         if message_type == "COMPLETE":
+    #             success_status, message = data
+    #             self.download_button.configure(state=NORMAL)
 
-        except queue.Empty:
-            pass
+    #     except queue.Empty:
+    #         pass
 
-        self.main.after(100, self._check_queue)
+    #     self.main.after(100, self._check_queue)
 
     def roi_changes_check(self):
         for r in roi:
@@ -2216,6 +2221,7 @@ class Earthquake(LayerMenu):
 
     def set_button_download(self, *_):
         if self.download_button.cget("state") == DISABLED:
+            self.already_downloaded.set(False)
             self.download_button.configure(state=NORMAL)
 
     def button_downloader(self, tab):
@@ -2227,7 +2233,7 @@ class Earthquake(LayerMenu):
             fg_color="dim gray",
             command=lambda: self.download_catalog(),
         )
-        self.download_button.place(relx=0.4, rely=0.87)
+        self.download_button.place(relx=0.4, rely=0.9)
 
     def button_show_catalog(self, tab):
         button = CTkButton(
@@ -2239,7 +2245,7 @@ class Earthquake(LayerMenu):
             command=self.show_catalog,
         )
 
-        button.place(relx=0.57, rely=0.87)
+        button.place(relx=0.57, rely=0.9)
 
     def show_catalog(self):
         catalog = self.eq_file
@@ -2261,17 +2267,6 @@ class Earthquake(LayerMenu):
             # Catch any other unexpected errors
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
-    # @property
-    # def date_strp(self):
-    #     format = "%Y-%m-%d"
-    #     dates = [
-    #         datetime.strptime(item.get(), format)
-    #         for item in self.dates
-    #         if type(item) == StringVar
-    #     ]
-    #     print(dates)
-    #     print(datetime.now())
-    #     return dates
     @property
     def date_strp(self):
         format_string = "%Y-%m-%d"  # Renamed 'format' for clarity
@@ -2311,6 +2306,7 @@ class Earthquake(LayerMenu):
     def download_catalog(self):
         print("download start")
         self.download_button.configure(state=DISABLED)
+        self.already_downloaded.set(True)
         self.roi_changes_check()
         server = {
             "GlobalCMT": gcmt_downloader,
@@ -2335,6 +2331,23 @@ class Earthquake(LayerMenu):
         )
         self.download_thread.daemon = False
         self.download_thread.start()
+
+    def parameter_depth_scale(self, opti, row):
+
+        w_fix_depth_scale = CTkCheckBox(
+            opti,
+            text="Fix depth scale",
+            fg_color="#3B8ED0",
+            checkbox_width=20,
+            checkbox_height=20,
+            border_width=2,
+            variable=self.main.fix_depth_scale,
+            onvalue=True,
+            offvalue=False,
+            width=100,
+            # command=lambda: self.color_toggle(self.scalebar_frame, vars_),
+        )
+        w_fix_depth_scale.grid(column=0, row=row, columnspan=3, sticky="w", padx=5)
 
     def parameter_catalog_source(self, opti, row, focmec=None):
         catalog = ["USGS", "ISC", "GlobalCMT", "User supplied"]
@@ -2468,17 +2481,26 @@ class Earthquake(LayerMenu):
             return round(self.depth_data["range"] / 6, -1)
 
     @property
-    def script(self):
+    def makecpt(self):
         cpt_file = f"{self.main.get_name.name}-depth.cpt"
 
-        if self.depth_data is None:
-            return
-        if "trim_min" in self.depth_data:
-            min_ = self.depth_data["trim_min"]
+        if self.main.fix_depth_scale.get():
+            makecpt = f"gmt makecpt -Cred,orange,yellow,green -T0,35,70,150,300 --COLOR_BACKGROUND=white --COLOR_FOREGROUND=blue -H > {cpt_file}\n"
         else:
-            min_ = self.depth_data["min"]
-        max_ = min_ + (self.cpt_interval * 6)
-        makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{self.cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+
+            if "trim_min" in self.depth_data:
+                min_ = self.depth_data["trim_min"]
+            else:
+                min_ = self.depth_data["min"]
+            max_ = min_ + (self.cpt_interval * 6)
+            makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{self.cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+        return makecpt, cpt_file
+
+    @property
+    def script(self):
+        # if not self.already_downloaded.get():
+        #     self.download_catalog()
+        makecpt, cpt_file = self.makecpt
         gmtmath = f"\tgmt math {self.eq_file} -C3 SQR {self.eq_scaler} MUL = | "
         gmtplot = f"gmt plot -C{cpt_file} -Scc -Wfaint,grey30 -Ve \n"
         return makecpt + gmtmath + gmtplot
@@ -2492,33 +2514,35 @@ class Focmec(Earthquake):
     # minmax depth
     def __init__(self, tab, main: MainApp, dates):
         super().__init__(tab, main, dates)
-        self.main = main
-        self.eq_catalog = StringVar(tab, value="USGS")
-        self.dates = dates
-        self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
-        self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
-        self.circle_size = ctk.DoubleVar(tab, 1)
-        self.download_queue = queue.Queue()
-        labels = {
-            "Catalog": "",
-            "Start date": "",
-            "End date": "",
-            "Magnitude": "",
-            "Depth": "",
-            "Size": "",
-        }
-        text, opti = self.tab_menu_layout_divider(tab)
-        self.parameter_labels(text, labels)
-        self.parameter_catalog_source(opti, 1, focmec=True)
-        self.parameter_date(opti, 2)
+        # self.main = main
+        # self.eq_catalog = StringVar(tab, value="USGS")
+        # self.dates = dates
+        # self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
+        # self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
+        # self.circle_size = ctk.DoubleVar(tab, 1)
+        # self.download_queue = queue.Queue()
+        # labels = {
+        #     "Catalog": "",
+        #     "Start date": "",
+        #     "End date": "",
+        #     "Magnitude": "",
+        #     "Depth": "",
+        #     "Size": "",
+        # }
+        # text, opti = self.tab_menu_layout_divider(tab)
+        # self.parameter_labels(text, labels)
+        # self.parameter_catalog_source(opti, 1, focmec=True)
+        # self.parameter_date(opti, 2)
 
-        self.parameter_magnitude_range(opti, 4)
-        self.parameter_depth_range(opti, 5)
-        self.parameter_eq_size(opti, 6)
-        self.button_downloader(tab)
-        self.button_show_catalog(tab)
-        self.add_tracers()
+        # self.parameter_magnitude_range(opti, 4)
+        # self.parameter_depth_range(opti, 5)
+        # self.parameter_eq_size(opti, 6)
+        # self.parameter_depth_scale(opti, 7)
+        # self.button_downloader(tab)
+        # self.button_show_catalog(tab)
+        # self.add_tracers()
         # self.main.after(100, self._check_queue)
+        self.parameter_catalog_source(self.opti, 1, focmec=True)
 
     @property
     def mag_data(self):
@@ -2536,20 +2560,13 @@ class Focmec(Earthquake):
 
     @property
     def script(self):
-        cpt_file = f"{self.main.get_name.name}-depth.cpt"
+        # if not self.already_downloaded.get():
+        #     self.download_catalog()
+        makecpt, cpt_file = self.makecpt
 
-        real_fm_depth = find_numeric_stats(self.eq_file, 2)
-        if real_fm_depth is None:
-            return
-        makecpt = "\r"
-        if not hasattr(self.main.get_layers, "earthquake"):
-            cpt_interval = round(real_fm_depth["range"] / 6, -1)
-            print(f"cpt interval ={cpt_interval}")
-            min_ = round(real_fm_depth["min"], -1)
-            max_ = min_ + (cpt_interval * 6)
-            print(f"min = {min_}")
-            print(f"max = {max_}")
-            makecpt = f"gmt makecpt -Cseis -T{min_}/{max_}/{cpt_interval} --COLOR_BACKGROUND=white --COLOR_FOREGROUND=black -H > {cpt_file}\n"
+        if hasattr(self.main.get_layers, "earthquake"):
+            makecpt = ""
+
         return f"{makecpt}\tgmt meca {self.eq_file} -Sd{self.fm_scaller}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
 
 
@@ -3299,8 +3316,10 @@ G 0.2c
         if width < 0.3 * map_width:
             width = map_width * 0.3
         if hasattr(self, "short_colorbar"):
-            print("\n\n dari legend width short colorbar\n\n")
             width += self.short_colorbar
+            print(
+                f"\n\n dari legend width short colorbar\n{width}\n{self.short_colorbar}\n\n"
+            )
         else:
             width *= 2
         return round(width, 0)
@@ -3320,8 +3339,10 @@ G 0.2c
     def legend_creator(self):
         title = ""
         date = ""
+        date_col = "N 2\n"
         count = ""
         ball = ""
+
         if self.toggle["eq"].get() or self.toggle["fm"].get():
             ball_space = self.ball_space
             ball_col = self.ball_column
@@ -3330,8 +3351,12 @@ G 0.2c
             ball = ball_col + ball_space + ball_leg + ball_space + ball_text
         if self.toggle["title"].get():
             title = "H 12p,Helvetica-Bold L E G E N D\nG 0.5c\n"
+        if hasattr(self, "short_colorbar"):
+            date_col = f"N {self.legend_width-self.short_colorbar:.1f} {self.short_colorbar:.1f}\n"
         if self.toggle["dates"].get():
-            date = f"N 2\nL 10p,Helvetica C Data during {self.dates_legend}\nG 0.3c\n"
+            date = (
+                f"{date_col}L 10p,Helvetica C Data during {self.dates_legend}\nG 0.3c\n"
+            )
         if self.toggle["counts"].get():
             count = self.counts_legend
 
@@ -3342,47 +3367,54 @@ G 0.2c
     def depth_ow(self):
         """Offset and width of earthquake depth scalebar legend: tuple[offset, width]"""
         offset_x = self.legend_width * 0.2
-        offset_y = 1.2
+        offset_y = 1.4
         width = self.legend_width * 0.4
         if self.toggle["title"].get():
-            offset_y += 1
+            offset_y += 0.8
         if hasattr(self, "short_colorbar"):
-            width = self.short_colorbar - 2.2
+            width = self.short_colorbar - 2
             offset_x = (
                 self.legend_width
+                - (self.legend_width / 2)
                 - self.short_colorbar
-                - (self.short_colorbar / 2)
+                + (self.short_colorbar / 2)
                 - 0.5
             )
-        return f"+o{offset_x}c/{offset_y}c", f"+w{width}c"
+        return f"+o{offset_x:.2f}c/{offset_y:.2f}c", f"+w{width:.2f}c"
 
     @property
     def z_ow(self):
         """Offset and width of grdimage scalebar legend: tuple[offset, width]"""
         offset_x = 0
-        offset_y = 1.2
+        offset_y = 1.4
         width = float(self.main.get_projection.proj_width.get()) * 0.3
         if self.toggle["title"].get():
-            offset_y += 1
-        # if self.toggle["counts"].get():
-        #     offset_y += 1.3
-        # if self.toggle["dates"]:
-        #     offset_y += 0.9
+            offset_y += 0.8
+
         if self.toggle["eq"].get() or self.toggle["fm"].get():
             offset_x = self.legend_width * 0.2
             width = self.legend_width * 0.4
         if self.toggle["depth"].get():
             offset_y += 2
         if hasattr(self, "short_colorbar"):
-            width = self.short_colorbar - 2.5
+            width = self.short_colorbar - 2
             offset_x = (
                 self.legend_width
+                - (self.legend_width / 2)
                 - self.short_colorbar
-                - (self.short_colorbar / 2)
+                + (self.short_colorbar / 2)
                 - 0.5
             )
 
-        return f"+o{offset_x}c/{offset_y}c", f"+w{width}c"
+        return f"+o{offset_x:.2f}c/{offset_y:.2f}c", f"+w{width:.2f}c"
+
+    def write_fix_depth(self):
+        fix_depth_label = os.path.join(
+            self.main.get_name.output_dir.get(), "fix_depth.txt"
+        )
+        text = "0 a\n35 a\n70 a\n150 a\n300 a"
+        file_writer(fix_depth_label, "w", text)
+        return "fix_depth.txt"
 
     @property
     def depth_legend(self):
@@ -3397,10 +3429,13 @@ G 0.2c
         elif self.toggle["fm"].get():
             cpt_depth_interval = self.fm.cpt_interval
             min_depth = round(self.fm.depth_data["min"], -1)
+        if self.main.fix_depth_scale.get():
+            fix_depth = self.write_fix_depth()
+            depth_label = f"-Bpxc{fix_depth} "
+        else:
+            depth_label = f"-B{cpt_depth_interval}+{min_depth}"
 
-        depth_label = f"-B{cpt_depth_interval}+{min_depth} -Bx+lEq_depth -By+lkm --FONT_LABEL=12p --MAP_FRAME_PEN=0.75p\n"
-
-        depth_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h+e0.3c -C{self.name}-depth.cpt {depth_label}"
+        depth_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h+e0.3c -C{self.name}-depth.cpt {depth_label} -Bx+lEq_depth -By+lkm --FONT_LABEL=15p --FONT_ANNOT=15p --MAP_FRAME_PEN=0.75p\n"
         return depth_colorbar_plot
 
     @property
@@ -3412,25 +3447,25 @@ G 0.2c
 
         offset, width = self.z_ow
         # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font}--MAP_FRAME_PEN=0.75p\n"
-        elev_label = (
-            f"-Bx+lElevation -By+lmeter --FONT_LABEL={font} --MAP_FRAME_PEN=0.75p\n"
-        )
-        elev_colorbar_plot = (
-            f"\tgmt colorbar -DJBC{offset}{width}+h -C{cpt} {elev_label}"
-        )
+        elev_label = f"-Bx+lElevation -By+lmeter --FONT_LABEL=15p --FONT_ANNOT=15p --MAP_FRAME_PEN=0.75p\n"
+        elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h -C{self.main.get_name.name}-Z.cpt {elev_label}"
         return elev_colorbar_plot
 
     @property
     def height(self):
-        height = ""
-        if self.toggle["title"].get():
+        value = 0
 
-            height = ""
-        if self.toggle["depth"].get() or self.toggle["z"].get():
-            height = "/3c"
-        if self.toggle["depth"].get() and self.toggle["z"].get():
-            height = "/5c"
-        return height
+        if not self.toggle["dates"].get() or not self.toggle["counts"].get():
+            if self.toggle["depth"].get():
+                value += 2
+
+            if self.toggle["z"].get():
+                value += 2
+            if self.toggle["title"].get():
+                value += 1
+        if value > 0:
+            return f"/{value}c"
+        return ""
 
     @property
     def script(self):
