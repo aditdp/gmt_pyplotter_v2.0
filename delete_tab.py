@@ -1755,18 +1755,62 @@ class GrdImage(ColorOptions):
         return self.main.get_projection.map_scale_factor
 
     @property
+    def grd_cpt(self):
+
+        remote_data = f"{self.grd.get()}{self.res.get()}"
+        coord_r = self.main.get_coordinate.coord_r
+        selected_cpt = self.grdimg_cpt_color.get()
+        bg = ""
+        min_, max_, interval = grdimage_min_max_interval(remote_data, coord_r)
+        if self.masking.get():
+            bg = f"-M --COLOR_BACKGROUND={self.masking_color.get()}"
+            min_ = 0
+        cpt_file = f"{self.main.get_name.dir_name}-Z.cpt"
+
+        makecpt_1 = f"gmt makecpt -G{min_}/{max_} -C{selected_cpt}+h0  {bg}"
+        makecpt_2 = f"gmt makecpt -G0/{max_} -C{selected_cpt}+h0 {bg}"
+        makecpt_3 = f"gmt makecpt -T{min_}/{max_}/{interval} -C{selected_cpt}+h0 {bg}"
+
+        for makecpt in makecpt_1, makecpt_2, makecpt_3:
+            try:
+                final_cpt = subprocess.run(
+                    f"{makecpt} -Z > {cpt_file}",
+                    shell=os.name == "posix",
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                grdinfo = final_cpt.stdout
+                grdinfo_err = final_cpt.stderr
+
+                if grdinfo_err:
+                    print("\n\n\noutput error dari grd_cpt Property")
+                    print(makecpt)
+                    print(grdinfo_err)
+                else:
+                    print("\n\n\noutput dari grd_cpt Property")
+                    print(makecpt)
+                    print(grdinfo + "\n\n")
+                    return makecpt
+            except:
+                print("gabisa dirunning")
+                pass
+        return ""
+
+    @property
     def script(self):
         remote_data = f"{self.grd.get()}{self.res.get()}"
+        cpt_file = f"{self.main.get_name.name}-Z.cpt"
+        makecpt = ""
         shade = ""
-        limit = ""
+
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
-        if self.masking.get():
-            limit = f"-L0/- -M --COLOR_BACKGROUND={self.masking_color.get()}"
-        cpt_file = f"{self.main.get_name.name}-Z.cpt"
-        grd2cpt = f"gmt grd2cpt {remote_data} {self.main.get_coordinate.coord_r} -C{self.grdimg_cpt_color.get()} {limit} -Z -H > {cpt_file}\n"
 
-        return f"{grd2cpt}gmt grdimage {remote_data} {shade} -C{cpt_file} "
+        if self.grd_cpt != "":
+            makecpt = f"{self.grd_cpt} -Z -H > {cpt_file}\n"
+
+        return f"{makecpt}\tgmt grdimage {remote_data} {shade} -C{cpt_file} "
 
 
 class Contour(ColorOptions):
@@ -3448,7 +3492,7 @@ G 0.2c
         offset, width = self.z_ow
         # elev_label = f"-B{self.cpt_elev_interval} -Bx+lElevation -By+lmeter --FONT_LABEL={font}--MAP_FRAME_PEN=0.75p\n"
         elev_label = f"-Bx+lElevation -By+lmeter --FONT_LABEL=15p --FONT_ANNOT=15p --MAP_FRAME_PEN=0.75p\n"
-        elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h -C{self.main.get_name.name}-Z.cpt {elev_label}"
+        elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h -C{self.main.get_name.name}-Z.cpt {elev_label}\n\tgmt colorbar -DJBC+o0.00c/5.20c{width}+h -C{cpt} {elev_label}"
         return elev_colorbar_plot
 
     @property

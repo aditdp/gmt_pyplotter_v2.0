@@ -635,3 +635,34 @@ def recommend_dem_resolution(map_scale_factor, for_contour=False):
             ][1]
 
     return recommended_res_string
+
+
+def grdimage_min_max_interval(grd_: str, coord_r: str):
+    """Evaluate the grd_file and return the recomended interval for cpt, elevmin, and elevmax"""
+    command = f"gmt grdinfo {grd_} {coord_r} -Cn -M -G"
+    try:
+        grdinfo = subprocess.run(
+            command,
+            shell=os.name == "posix",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        grdinfo = grdinfo.stdout.split()
+        elevmax = round(float(grdinfo[5]), -1)
+        elevmin = round(float(grdinfo[4]), -1)
+        total_elev = elevmax + abs(elevmin)
+        interval = 0
+        if total_elev in range(5000, 20000):
+            interval = 1000
+        elif total_elev in range(2500, 5000):
+            interval = 500
+        elif total_elev in range(1000, 2500):
+            interval = 250
+        elif total_elev in range(500, 1000):
+            interval = 100
+        elif total_elev in range(0, 500):
+            interval = 50
+        return elevmin, elevmax, interval
+    except:
+        return "", "", ""
