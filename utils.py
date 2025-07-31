@@ -317,9 +317,6 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 if len(row) != 13:
                     raise ValueError("Row does not contain exactly 13 values")
 
-                lon = float(row[0])
-                lat = float(row[1])
-                depth = float(row[2])
                 mrr = float(row[3])
                 mtt = float(row[4])
                 mpp = float(row[5])
@@ -327,9 +324,6 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 mrp = float(row[7])
                 mtp = float(row[8])
                 iexp = int(row[9])
-                x = row[10]
-                y = row[11]
-                name = row[12]
 
                 # Calculate Mw
                 mw = calculate_mw(mrr, mtt, mpp, mrt, mrp, mtp, iexp)
@@ -420,8 +414,6 @@ def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
         end_index = html.rfind("STOP") - 1
         data_isc = html[start_index:end_index]
         print("data acquired..")
-        # input("press any key to continue..")
-        # print(data_isc)
         file_writer(f"{dir_name}_ORI.txt", "w", data_isc)
         if file_is_not_empty(f"{dir_name}_ORI.txt"):
             reorder_columns(
@@ -459,7 +451,7 @@ def gmt_execute(script_name, output_dir, folowing: list):
 
     try:
         print(f"Running '{output_dir}/{script_name}.bat' with subprocess.Popen()...")
-        # exit_code = os.system(f"{name}.bat")
+
         generate_map = subprocess.Popen(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
@@ -485,7 +477,10 @@ def gmt_execute(script_name, output_dir, folowing: list):
 
 
 def recommend_contour_interval(map_scale_factor, min_value, max_value):
-
+    vl = "Very Low Relief1"
+    l_m = "Low to Moderate Relief1"
+    m_h = "Moderate to High Relief1"
+    vh = "Very High Relief1"
     if not isinstance(map_scale_factor, (int, float)) or map_scale_factor <= 0:
         return None
     if not isinstance(min_value, (int, float)) or not isinstance(
@@ -509,64 +504,64 @@ def recommend_contour_interval(map_scale_factor, min_value, max_value):
     print(scale_category)
     relief_category = ""
     if total_relief < 100:
-        relief_category = "Very Low Relief"
+        relief_category = vl
     elif 100 <= total_relief < 1000:
-        relief_category = "Low to Moderate Relief"
+        relief_category = l_m
     elif 1000 <= total_relief < 2000:
-        relief_category = "Moderate to High Relief"
+        relief_category = m_h
     else:  # total_relief >= 2000
-        relief_category = "Very High Relief"
+        relief_category = vh
     print(relief_category)
     divisor = 1
 
     standard_cis = [5, 10, 12.5, 20, 25, 50, 75, 100, 150, 200, 250, 500]
 
     if scale_category == "Very Large Scale":
-        if relief_category == "Very Low Relief":
+        if relief_category == vl:
             divisor = 10
 
-        elif relief_category == "Low to Moderate Relief":
+        elif relief_category == l_m:
             divisor = 40
 
         else:  # Moderate to High / Very High Relief
             divisor = 40
 
     elif scale_category == "Large Scale":
-        if relief_category == "Very Low Relief":
+        if relief_category == vl:
             divisor = 10
 
-        elif relief_category == "Low to Moderate Relief":
+        elif relief_category == l_m:
             divisor = 15
 
-        elif relief_category == "Moderate to High Relief":
+        elif relief_category == m_h:
             divisor = 40
 
         else:  # Very High Relief (Mountainous)
             divisor = 50
 
     elif scale_category == "Medium Scale":
-        if relief_category == "Very Low Relief":
+        if relief_category == vl:
             # Very flat terrain is rarely mapped at medium scales for detailed contours
             divisor = 10
 
-        elif relief_category == "Low to Moderate Relief":
+        elif relief_category == l_m:
             divisor = 15
 
-        elif relief_category == "Moderate to High Relief":
+        elif relief_category == m_h:
             divisor = 20
 
         else:  # Very High Relief (Mountainous)
             divisor = 20
 
     else:  # scale_category == "Small Scale"
-        if relief_category == "Very Low Relief":
+        if relief_category == vl:
             # Very flat terrain is almost never mapped with contours at small scales
             divisor = 5
 
-        elif relief_category == "Low to Moderate Relief":
+        elif relief_category == l_m:
             divisor = 7.5
 
-        elif relief_category == "Moderate to High Relief":
+        elif relief_category == m_h:
             divisor = 10
 
         else:  # Very High Relief (Mountainous)
@@ -664,5 +659,5 @@ def grdimage_min_max_interval(grd_: str, coord_r: str):
         elif total_elev in range(0, 500):
             interval = 50
         return elevmin, elevmax, interval
-    except:
+    except subprocess.CalledProcessError:
         return "", "", ""

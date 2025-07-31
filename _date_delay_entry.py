@@ -7,7 +7,9 @@ import calendar
 
 
 class DateEntry(ctk.CTkFrame):
-    def __init__(self, master, textvar=None, date=datetime.now(), **kwargs):
+    def __init__(
+        self, master, textvar: ctk.StringVar, date: datetime = datetime.now(), **kwargs
+    ):
         super().__init__(master, fg_color="transparent", **kwargs)
 
         self.selected_date = date
@@ -17,7 +19,7 @@ class DateEntry(ctk.CTkFrame):
         self.date_entry.grid(row=0, column=0, padx=(0, 5))
         self.date_entry.insert(
             0, self.selected_date.strftime("%Y-%m-%d")
-        )  # Initial format YYYY/MM/DD
+        )  # Initial format YYYY-MM-DD
         self.validation_timer = None
         self.validation_delay_ms = 1500
 

@@ -53,7 +53,7 @@ class GlobeMap:
         self.grid_color = "grey10"
         earth_relief = tk.StringVar(value="on")
         # Create ImageFrame in placeholder widget
-        self.__imframe = ctk.CTkFrame(placeholder)
+        self._imframe = ctk.CTkFrame(placeholder)
 
         self.__initialize_scrollbars()
         self.__initialize_canvas()
@@ -109,7 +109,7 @@ class GlobeMap:
     def __initialize_canvas(self):
         """Initialize and configure the canvas"""
         self.canvas = tk.Canvas(
-            self.__imframe,
+            self._imframe,
             background="gray20",
             highlightthickness=0,
             xscrollcommand=self.hbar.set,
@@ -120,8 +120,8 @@ class GlobeMap:
 
     def __initialize_scrollbars(self):
         """Initialize and configure scrollbars"""
-        self.hbar = AutoScrollbar(self.__imframe, orientation="horizontal")
-        self.vbar = AutoScrollbar(self.__imframe, orientation="vertical")
+        self.hbar = AutoScrollbar(self._imframe, orientation="horizontal")
+        self.vbar = AutoScrollbar(self._imframe, orientation="vertical")
         self.hbar.grid(row=1, column=0, sticky="we")
         self.vbar.grid(row=0, column=1, sticky="ns")
         self.hbar.configure(command=self.__scroll_x)
@@ -156,16 +156,16 @@ class GlobeMap:
         path = os.path.dirname(os.path.abspath(__file__))
         path_simple = os.path.join(path, image_folder, f"map_simple_{p}.png")
         path_relief = os.path.join(path, image_folder, f"map_relief_{p}.jpg")
-        self.__pyramid_simple = [Image.open(path_simple)]
-        self.__pyramid_relief = [Image.open(path_relief)]
-        self.imwidth, self.imheight = self.__pyramid_simple[0].size
+        self._pyramid_simple = [Image.open(path_simple)]
+        self._pyramid_relief = [Image.open(path_relief)]
+        self.imwidth, self.imheight = self._pyramid_simple[0].size
         self.__min_side = min(self.imwidth, self.imheight)
         self.__ratio = 1.0
         self.__curr_img = 0
         self.__scale = self.imscale * self.__ratio
 
         for i in range(1 + p, 5 + p):
-            self.__pyramid_simple.append(
+            self._pyramid_simple.append(
                 Image.open(
                     os.path.join(
                         path,
@@ -174,7 +174,7 @@ class GlobeMap:
                     )
                 )
             )
-            self.__pyramid_relief.append(
+            self._pyramid_relief.append(
                 Image.open(
                     os.path.join(
                         path,
@@ -193,10 +193,10 @@ class GlobeMap:
 
     def grid(self, **kw):
         """Put CanvasImage widget on the parent widget"""
-        self.__imframe.grid(**kw)  # place CanvasImage widget on the grid
-        self.__imframe.grid(sticky="nswe")  # make frame container sticky
-        self.__imframe.rowconfigure(0, weight=1)  # make canvas expandable
-        self.__imframe.columnconfigure(0, weight=1)
+        self._imframe.grid(**kw)  # place CanvasImage widget on the grid
+        self._imframe.grid(sticky="nswe")  # make frame container sticky
+        self._imframe.rowconfigure(0, weight=1)  # make canvas expandable
+        self._imframe.columnconfigure(0, weight=1)
 
     def pack(self, **kw):
         """Exception: cannot use pack with this widget"""
@@ -221,9 +221,9 @@ class GlobeMap:
     def __show_image(self, job=None):
         """Show image on the Canvas. Implements correct image zoom almost like in Google Maps"""
         if earth_relief.get() == "on":
-            self.__pyramid = self.__pyramid_relief
+            self._pyramid = self._pyramid_relief
         elif earth_relief.get() == "off":
-            self.__pyramid = self.__pyramid_simple
+            self._pyramid = self._pyramid_simple
         else:
             print("tidak ketemu gambarnya")
         box_image = self.canvas.coords(self.container)  # get image area
@@ -265,7 +265,7 @@ class GlobeMap:
             int(x2 - x1) > 0 and int(y2 - y1) > 0
         ):  # show image if it in the visible area
 
-            image = self.__pyramid[
+            image = self._pyramid[
                 max(0, self.__curr_img)
             ].crop(  # crop current img from pyramid
                 (
@@ -287,7 +287,7 @@ class GlobeMap:
                 image=imagetk,
             )
             self.canvas.lower(imageid)  # set image into background
-            self.canvas.imagetk = (
+            self.canvas_imagetk = (
                 imagetk  # keep an extra reference to prevent garbage-collection
             )
             GridLines(
@@ -340,7 +340,7 @@ class GlobeMap:
             scale *= self.__delta
         # Take appropriate image from the pyramid
         k = self.imscale * self.__ratio  # temporary coefficient
-        self.__curr_img = min((-1) * int(math.log(k, 2)), len(self.__pyramid) - 1)
+        self.__curr_img = min((-1) * int(math.log(k, 2)), len(self._pyramid) - 1)
         self.__scale = k * math.pow(2, max(0, self.__curr_img))
         #
         self.canvas.scale("all", x, y, scale, scale)  # rescale all objects
@@ -398,7 +398,7 @@ class GlobeMap:
     def crop(self, bbox):
         """Crop rectangle from the image and return it"""
 
-        return self.__pyramid[0].crop(bbox)
+        return self._pyramid[0].crop(bbox)
 
     def map_background(self):
 
@@ -1082,14 +1082,12 @@ class CoordWindow(ctk.CTkToplevel):
 
         if quiting.get() == "Yes":
             self.globemap.save_state()
-            self.globemap._GlobeMap__pyramid_relief.clear()
-            self.globemap._GlobeMap__pyramid_simple.clear()
-            map(
-                lambda i: i.close, self.globemap._GlobeMap__pyramid
-            )  # close all pyramid images
-            del self.globemap._GlobeMap__pyramid[:]  # delete pyramid list
-            del self.globemap._GlobeMap__pyramid  # delete pyramid variable
-            self.globemap._GlobeMap__imframe.destroy()
+            self.globemap._pyramid_relief.clear()
+            self.globemap._pyramid_simple.clear()
+            map(lambda i: i.close, self.globemap._pyramid)  # close all pyramid images
+            del self.globemap._pyramid[:]  # delete pyramid list
+            del self.globemap._pyramid  # delete pyramid variable
+            self.globemap._imframe.destroy()
 
             self.withdraw()
             self.quit()
