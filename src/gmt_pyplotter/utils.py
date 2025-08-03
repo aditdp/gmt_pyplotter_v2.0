@@ -602,19 +602,13 @@ def recommend_dem_resolution(map_scale_factor, for_contour=False):
 
 def grdimage_min_max_interval(grd_: str, coord_r: str):
     """Evaluate the grd_file and return the recomended interval for cpt, elevmin, and elevmax"""
-    command = f"gmt grdinfo {grd_} {coord_r} -Cn -M -G"
+    command = f"gmt grdinfo {grd_}_p {coord_r} -Cn -M -G --GMT_DATA_SERVER=singapore"
+    print(command)
     try:
-        grdinfo = subprocess.run(
-            command,
-            shell=os.name == "posix",
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        grdinfo = grdinfo.stdout.split()
-        elevmax = round(float(grdinfo[5]), -1)
-        elevmin = round(float(grdinfo[4]), -1)
-        total_elev = elevmax + abs(elevmin)
+        min_, max_, _ = grdimage_min_max(grd_, command)
+        elevmin = round(float(min_), -1)
+        elevmax = round(float(max_), -1)
+        total_elev = elevmax - elevmin
         interval = 0
         if total_elev in range(5000, 20000):
             interval = 1000
@@ -628,4 +622,40 @@ def grdimage_min_max_interval(grd_: str, coord_r: str):
             interval = 50
         return elevmin, elevmax, interval
     except subprocess.CalledProcessError:
-        return "", "", ""
+        print("Error calc min-max values")
+        return [0]
+    except ConnectionError as e:
+        print(e)
+        return [0]
+    except ValueError as e:
+        print(e)
+        return [0]
+
+
+def grdimage_min_max(grd_, command):
+    est_min_max = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        universal_newlines=True,
+    )
+    stdout, stderr = est_min_max.communicate()
+    print(stdout)
+    return_code = est_min_max.returncode
+    grdinfo = stdout.split("\t")
+    if "Unable to obtain remote file" in stderr:
+        message = f"Couldn't connect to GMT remote server for downloading {grd_} data.\nConnect to internet or change network connection."
+        raise ConnectionError(message)
+    min_ = grdinfo[5]
+    max_ = grdinfo[6]
+    if min_.lower() == "nan" or max_.lower() == "nan":
+        raise ValueError(f"No data {grd_} in this area..\nChoose another grid data.")
+    min_ = float(grdinfo[4])
+    max_ = float(grdinfo[5])
+    print("dari utils")
+    print(f"min = {min_}")
+    print(f"max = {max_}")
+
+    return min_, max_, return_code

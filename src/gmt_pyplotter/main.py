@@ -1,16 +1,17 @@
 import customtkinter as ctk
 import os, threading, subprocess, ctypes, json, queue, sys
 from tkinter import messagebox, Canvas, TclError
-from pathlib import Path
-from PIL import Image, ImageTk
+from dateutil.relativedelta import relativedelta
 from CTkColorPicker import AskColor
 from CTkToolTip import CTkToolTip
+from PIL import Image, ImageTk
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
-from gmt_pyplotter.ctk_coordinate_gui import CoordWindow
-from gmt_pyplotter.ctk_date_entry import DateEntry
+from pathlib import Path
 from gmt_pyplotter.ctk_scrollable_dropdown import CTkScrollableDropdown
+from gmt_pyplotter.ctk_coordinate_gui import CoordWindow
 from gmt_pyplotter.ctk_rangeslider import CTkRangeSlider
+from gmt_pyplotter.ctk_date_entry import DateEntry
+from gmt_pyplotter.color_list import palette_name
 from customtkinter import (
     StringVar,
     IntVar,
@@ -652,7 +653,8 @@ class LayerMenu:
             case "Earth relief":
                 if self.grdimage.after_id:
                     self.main.after_cancel(self.grdimage.after_id)
-                    del self.grdimage
+                self.grdimage.remove_tracers()
+                del self.grdimage
             case "Contour line":
                 if self.contour.after_id:
                     self.main.after_cancel(self.contour.after_id)
@@ -929,12 +931,13 @@ class MapPreview:
             prev_script.write(
                 "\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
             )
+            prev_script.write("\tgmt set GMT_DATA_SERVER singapore\n")
             prev_script.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
-            if "Coastal line" in _layers.layers:
-                prev_script.write(f"\t{_layers.coast.script}\n")
-
             if "Earth relief" in _layers.layers:
                 prev_script.write(f"\t{_layers.grdimage.script}\n")
+                
+            if "Coastal line" in _layers.layers:
+                prev_script.write(f"\t{_layers.coast.script}\n")
 
             if "Contour line" in _layers.layers:
                 prev_script.write(f"\t{_layers.contour.script}\n")
@@ -1062,6 +1065,9 @@ class MapPreview:
                 self.map_preview_on(success_status, message)
             elif message_type == "REFRESHED":
                 self.refreshed()
+            if not data[0]:
+                print(data[1])
+                self.map_preview_off()
 
         except queue.Empty:
             pass
@@ -1126,7 +1132,7 @@ class GrdOptions:
         "@earth_faaerror_": ("mGal", '"Gravity Anomalies Errors"'),
     }
 
-    _grd_codes = [
+    grd_codes = [
         "@earth_relief_",
         "@earth_synbath_",
         "@earth_gebco_",
@@ -1142,30 +1148,30 @@ class GrdOptions:
     ]
 
     gmt_grd_dict = {
-        _grd_fullname[0]: [_grd_codes[0]] + _res,
-        _grd_fullname[1]: [_grd_codes[1]] + _res,
-        _grd_fullname[2]: [_grd_codes[2]] + _res,
-        _grd_fullname[3]: [_grd_codes[3]] + _res[4:],
-        _grd_fullname[4]: [_grd_codes[4]] + _res[3:],
-        _grd_fullname[5]: [_grd_codes[5]] + _res[3:],
-        _grd_fullname[6]: [_grd_codes[6]] + _res[5:],
-        _grd_fullname[7]: [_grd_codes[7]] + _res[5:],
-        _grd_fullname[8]: [_grd_codes[8]] + _res[6:],
-        _grd_fullname[9]: [_grd_codes[9]] + _res[4:],
-        _grd_fullname[10]: [_grd_codes[10]] + _res[4:],
-        _grd_fullname[11]: [_grd_codes[11]] + _res[4:],
+        _grd_fullname[0]: [grd_codes[0]] + _res,
+        _grd_fullname[1]: [grd_codes[1]] + _res,
+        _grd_fullname[2]: [grd_codes[2]] + _res,
+        _grd_fullname[3]: [grd_codes[3]] + _res[4:],
+        _grd_fullname[4]: [grd_codes[4]] + _res[3:],
+        _grd_fullname[5]: [grd_codes[5]] + _res[3:],
+        _grd_fullname[6]: [grd_codes[6]] + _res[5:],
+        _grd_fullname[7]: [grd_codes[7]] + _res[5:],
+        _grd_fullname[8]: [grd_codes[8]] + _res[6:],
+        _grd_fullname[9]: [grd_codes[9]] + _res[4:],
+        _grd_fullname[10]: [grd_codes[10]] + _res[4:],
+        _grd_fullname[11]: [grd_codes[11]] + _res[4:],
     }
     gmt_ctr_dict = {
-        _grd_fullname[0]: [_grd_codes[0]] + _res,
-        _grd_fullname[1]: [_grd_codes[1]] + _res,
-        _grd_fullname[2]: [_grd_codes[2]] + _res,
-        _grd_fullname[3]: [_grd_codes[3]] + _res[4:],
-        _grd_fullname[6]: [_grd_codes[6]] + _res[5:],
-        _grd_fullname[7]: [_grd_codes[7]] + _res[5:],
-        _grd_fullname[8]: [_grd_codes[8]] + _res[6:],
-        _grd_fullname[9]: [_grd_codes[9]] + _res[4:],
-        _grd_fullname[10]: [_grd_codes[10]] + _res[4:],
-        _grd_fullname[11]: [_grd_codes[11]] + _res[4:],
+        _grd_fullname[0]: [grd_codes[0]] + _res,
+        _grd_fullname[1]: [grd_codes[1]] + _res,
+        _grd_fullname[2]: [grd_codes[2]] + _res,
+        _grd_fullname[3]: [grd_codes[3]] + _res[4:],
+        _grd_fullname[6]: [grd_codes[6]] + _res[5:],
+        _grd_fullname[7]: [grd_codes[7]] + _res[5:],
+        _grd_fullname[8]: [grd_codes[8]] + _res[6:],
+        _grd_fullname[9]: [grd_codes[9]] + _res[4:],
+        _grd_fullname[10]: [grd_codes[10]] + _res[4:],
+        _grd_fullname[11]: [grd_codes[11]] + _res[4:],
     }
 
     def __init__(
@@ -1178,7 +1184,7 @@ class GrdOptions:
     ):
 
         self.grd = var_grd
-        self.grd.set(GrdOptions._grd_codes[0])
+        self.grd.set(GrdOptions.grd_codes[0])
         self.res = var_res
         self.dict = self.gmt_grd_dict
         if ctr == True:
@@ -1591,7 +1597,24 @@ class GrdImage(ColorOptions):
         self.parameter_color(opti, 5, self.masking_color, self.masking)
         ColorOptions.gmt_color_palette(tab)
         self.main.get_layers.parameter_labels(text, labels)
+        self.determine_cpt_script()
         self.roi_changes_check()
+        self.add_tracers()
+        
+    def add_tracers(self):
+        self.prev_coord = set()
+        self.trace_handlers = []
+        to_trace = [self.grd, self.masking, self.masking_color,self.grdimg_cpt_color]
+        for var in to_trace:
+            trace_id = var.trace_add("write", self.determine_cpt_script)
+            self.trace_handlers.append((var, trace_id))
+
+    def remove_tracers(self):
+        for var, trace_id in self.trace_handlers:
+            try:
+                var.trace_remove("write", trace_id)
+            except TclError as e:
+                print(f"error removing trace {trace_id} from {var}: {e}")
 
     def update_resolution(self):
         self.prev_coord = {r.get() for r in roi}
@@ -1611,12 +1634,11 @@ class GrdImage(ColorOptions):
         self.after_id = self.main.after(100, self.roi_changes_check)
 
     def parameter_cpt(self, opti, row):
-        from gmt_pyplotter.color_list import palette_name
-
+        palette_cpt = list(palette_name.keys())
         entry = CTkOptionMenu(
             opti,
             variable=self.grdimg_cpt_color,
-            values=palette_name,
+            values=palette_cpt,
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
@@ -1624,7 +1646,7 @@ class GrdImage(ColorOptions):
         )
         CTkScrollableDropdown(
             entry,
-            values=palette_name,
+            values=palette_cpt,
             command=lambda e: self.grdimg_cpt_color.set(e),
             width=200,
             height=300,
@@ -1676,46 +1698,79 @@ class GrdImage(ColorOptions):
     def map_scale_factor(self):
         return self.main.get_projection.map_scale_factor
 
-    @property
-    def grd_cpt(self):
-
+    def determine_cpt_script(self, *_):
         remote_data = f"{self.grd.get()}{self.res.get()}"
         coord_r = self.main.get_coordinate.coord_r
         selected_cpt = self.grdimg_cpt_color.get()
+        cpt_thread = threading.Thread(target=self.grd_cpt, args=[self.main.get_name.dir_name,remote_data, coord_r, selected_cpt, self.masking.get(), self.masking_color.get()])
+        cpt_thread.daemon = True
+        cpt_thread.start()
+
+    def grd_cpt(self,dir_name, remote_data, coord_r, selected_cpt, masking:bool, masking_color:str):
         bg = ""
-        min_, max_, interval = grdimage_min_max_interval(remote_data, coord_r)
-        if self.masking.get():
-            bg = f"-M --COLOR_BACKGROUND={self.masking_color.get()}"
+        try:
+            min_, max_, interval = grdimage_min_max_interval(remote_data, coord_r)
+            print(f"min = {min_}")
+            print(f"max = {max_}")
+            print(f"intv= {interval}")
+        except ValueError:
+            print("errror di grdimage min max interval")
+            return ""
+        if masking:
+            bg = f"-M --COLOR_BACKGROUND={masking_color}"
             min_ = 0
-        cpt_file = f"{self.main.get_name.dir_name}-Z.cpt"
+        cpt_file = f"{dir_name}-Z.cpt"
 
-        makecpt_1 = f"gmt makecpt -G{min_}/{max_} -C{selected_cpt}+h0  {bg}"
-        makecpt_2 = f"gmt makecpt -G0/{max_} -C{selected_cpt}+h0 {bg}"
-        makecpt_3 = f"gmt makecpt -T{min_}/{max_}/{interval} -C{selected_cpt}+h0 {bg}"
+        if (
+            palette_name[selected_cpt][0] != 9
+            and self.grd.get() in self.gmt_grd.grd_codes[0:3]
+        ):
+            low = palette_name[selected_cpt][0]
+            high = palette_name[selected_cpt][1]
+            clamped_min = max(min_, low)
+            clamped_max = min(max_, high)
+            limit = f"-G{clamped_min}/{clamped_max}"
+            print("NORMAL")
+            if high ==0:
+                print("LAUT")
+                min_round = round(min_/interval)*interval
+                limit = f"-T{min_round}/0/{interval} -M --COLOR_FOREGROUND=darkolivegreen3"
+            if low==0:
+                print("DEM")
+                max_round = round(max_/interval)*interval
+                limit = f"-T0/{max_round}/{interval} -M --COLOR_BACKGROUND=azure"
 
-        for makecpt in makecpt_1, makecpt_2, makecpt_3:
-            try:
-                final_cpt = subprocess.run(
-                    f"{makecpt} -Z > {cpt_file}",
-                    shell=os.name == "posix",
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                grdinfo = final_cpt.stdout
-                grdinfo_err = final_cpt.stderr
+        else:
+            print("CUSTOM")
+            min_round = round(min_/interval)
+            limit = f"-T{min_}/{max_}/{interval}"
 
-                if grdinfo_err:
-                    print(makecpt)
-                    print(grdinfo_err)
-                else:
-                    print(makecpt)
-                    print(grdinfo)
-                    return makecpt
-            except subprocess.CalledProcessError:
-                pass
+        makecpt = f"gmt makecpt {limit} -C{selected_cpt} {bg}"
 
-        return ""
+        try:
+            final_cpt = subprocess.run(
+                f"{makecpt} -Z > {cpt_file}",
+                shell=os.name == "posix",
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            grdinfo = final_cpt.stdout
+            grdinfo_err = final_cpt.stderr
+            if grdinfo_err:
+                print("GRDINFO ERROR")
+                print(makecpt)
+                print(grdinfo_err)
+            else:
+                print("GRDINFO NORMAL")
+                print(makecpt)
+                print(grdinfo)
+                self.cpt_script = makecpt
+        except subprocess.CalledProcessError:
+            print("SUBPROCESS ERROR")
+            print(makecpt)
+            if hasattr(self, "cpt_script"):
+                del self.cpt_script
 
     @property
     def script(self):
@@ -1727,9 +1782,9 @@ class GrdImage(ColorOptions):
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
 
-        if self.grd.get() in self.gmt_grd._grd_codes[0:4] + self.gmt_grd._grd_codes[6:]:
+        if self.grd.get() in self.gmt_grd.grd_codes[0:4] + self.gmt_grd.grd_codes[6:] and hasattr(self, "cpt_script"):
             cpt_file = f"-C{self.main.get_name.name}-Z.cpt"
-            makecpt = f"{self.grd_cpt} -Z -H > {cpt_file}\n"
+            makecpt = f"{self.cpt_script} -Z -H > {cpt_file}\n"
         if self.masking.get():
             sea_mask = f"\n\tgmt coast -S{self.masking_color.get()}"
         return f"{makecpt}\tgmt grdimage {remote_data} {shade} {cpt_file} {sea_mask}"
@@ -1815,7 +1870,7 @@ class Contour(ColorOptions):
 
     def estimate_interval(self, scale_factor, grd, res, coord):
         print("estimating contour interval")
-        command = f"gmt grdinfo {grd}{res} {coord} -G -C -M"
+        command = f"gmt grdinfo {grd}{res} {coord} -G -C -M --GMT_DATA_SERVER=singapore"
 
         try:
             est_interval = subprocess.Popen(
@@ -2940,7 +2995,7 @@ class Legend:
                     self.widgets[i].deselect()
 
     def _widget_toggle_grd(self):
-        if hasattr(self.main.get_layers, "grdimage"):
+        if hasattr(self.main.get_layers, "grdimage") and hasattr(self.main.get_layers.grdimage, "cpt_script"):
             if self.widgets[7].cget("state") == DISABLED:
                 self.widgets[7].configure(state=NORMAL)
                 self.widgets[7].select()
@@ -3295,9 +3350,14 @@ G 0.2c
         unit = self.main.get_layers.grdimage.gmt_grd.unit
         type_ = self.main.get_layers.grdimage.gmt_grd.type
         font = "12p"
+        sidebar = ""
+        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][1]==0:
+            sidebar="+ef0.3c"
+        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][0]==0:
+            sidebar="+eb0.3c"
         offset, width = self.z_ow
         elev_label = f"-Bx+l{type_} -By+l{unit} --FONT_LABEL={font} --FONT_ANNOT={font} --MAP_FRAME_PEN=0.75p\n"
-        elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h -C{self.main.get_name.name}-Z.cpt {elev_label}\n"
+        elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h{sidebar} -C{self.main.get_name.name}-Z.cpt {elev_label}\n"
         return elev_colorbar_plot
 
     @property
