@@ -1,9 +1,10 @@
 import customtkinter as ctk
-import os, threading, subprocess, ctypes, json, queue, sys
+import os, threading, subprocess, ctypes, json, queue, sys, shutil, webbrowser
 from tkinter import messagebox, Canvas, TclError
 from dateutil.relativedelta import relativedelta
 from CTkColorPicker import AskColor
 from CTkToolTip import CTkToolTip
+from CTkMessagebox import CTkMessagebox
 from PIL import Image, ImageTk
 from datetime import datetime
 from pathlib import Path
@@ -85,7 +86,75 @@ class MainApp(ctk.CTk):
         button.place(relx=0, rely=0.95)
         self.orig = True
         self.protocol("WM_DELETE_WINDOW", self.closing)
+        self.after(500, self.is_gmt_installed)
         self.mainloop()
+
+    def early_exit(self, status: int = 0):
+        gmt_url = "https://docs.generic-mapping-tools.org/latest/install.html"
+        not_installed = "Please install GMT before running gmt_pyplotter"
+        version_error = "Please update the GMT before running gmt_pyplotter"
+        found_default = "GMT added to the PATH environment variable\nRestart the terminal for the changes take effect"
+        icon = "cancel"
+        if status == 1:
+            message = version_error
+        elif status == 2:
+            message = found_default
+            icon = "warning"
+        else:
+            message = not_installed
+
+        popup = CTkMessagebox(
+            self,
+            title="Generic Mapping Tools Not Installed",
+            message=message,
+            option_1="Download GMT",
+            option_2="OK",
+            option_focus=1,
+            icon=icon,
+            wraplength=300,
+            fade_in_duration=100,
+            font=("Consolas", 14),
+        )
+        if popup.get() == "Download GMT":
+            webbrowser.open(gmt_url)
+
+        self.withdraw()
+        self.quit()
+        self.destroy()
+        sys.exit("\n\033[38;5;196mReopen the terminal \033[0;0m\n")
+
+    def is_gmt_installed(self):
+        """Check is GMT installed in the system with supported version."""
+
+        gmt_path = shutil.which("gmt")
+
+        if gmt_path == None:
+            gmt_default = r"C:\programs\gmt6\bin\gmt.exe"
+            if os.path.isfile(gmt_default) == True:
+                print(r"GMT found at 'C:\programs\gmt6\bin' ")
+                print(
+                    "\033[38;5;220m\033[3mUpdating 'Path' Environment Variable...\033[0m\033[38;5;81m"
+                )
+                os.system(
+                    r"""For /F "Skip=2Tokens=1-2*" %A In ('Reg Query HKCU\Environment /V PATH 2^>Nul') Do setx PATH "%C;C:\programs\gmt6\bin """
+                )
+                self.early_exit(2)
+            else:
+                self.early_exit(0)
+
+        getgmtversion = subprocess.Popen(
+            "gmt --version", shell=False, stdout=subprocess.PIPE
+        ).stdout
+        if getgmtversion != None:
+            gmt_ver = getgmtversion.read()
+            gmt_ver = gmt_ver.decode().rstrip()
+            try:
+                if float(gmt_ver[0:3]) <= 6.4:
+                    self.early_exit(1)
+            except ValueError:
+                self.early_exit()
+        else:
+            self.early_exit()
 
     def date_constructor(self):
         _start = datetime.now() - relativedelta(years=2)
@@ -935,7 +1004,7 @@ class MapPreview:
             prev_script.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
             if "Earth relief" in _layers.layers:
                 prev_script.write(f"\t{_layers.grdimage.script}\n")
-                
+
             if "Coastal line" in _layers.layers:
                 prev_script.write(f"\t{_layers.coast.script}\n")
 
@@ -1600,11 +1669,11 @@ class GrdImage(ColorOptions):
         self.determine_cpt_script()
         self.roi_changes_check()
         self.add_tracers()
-        
+
     def add_tracers(self):
         self.prev_coord = set()
         self.trace_handlers = []
-        to_trace = [self.grd, self.masking, self.masking_color,self.grdimg_cpt_color]
+        to_trace = [self.grd, self.masking, self.masking_color, self.grdimg_cpt_color]
         for var in to_trace:
             trace_id = var.trace_add("write", self.determine_cpt_script)
             self.trace_handlers.append((var, trace_id))
@@ -1702,11 +1771,29 @@ class GrdImage(ColorOptions):
         remote_data = f"{self.grd.get()}{self.res.get()}"
         coord_r = self.main.get_coordinate.coord_r
         selected_cpt = self.grdimg_cpt_color.get()
-        cpt_thread = threading.Thread(target=self.grd_cpt, args=[self.main.get_name.dir_name,remote_data, coord_r, selected_cpt, self.masking.get(), self.masking_color.get()])
+        cpt_thread = threading.Thread(
+            target=self.grd_cpt,
+            args=[
+                self.main.get_name.dir_name,
+                remote_data,
+                coord_r,
+                selected_cpt,
+                self.masking.get(),
+                self.masking_color.get(),
+            ],
+        )
         cpt_thread.daemon = True
         cpt_thread.start()
 
-    def grd_cpt(self,dir_name, remote_data, coord_r, selected_cpt, masking:bool, masking_color:str):
+    def grd_cpt(
+        self,
+        dir_name,
+        remote_data,
+        coord_r,
+        selected_cpt,
+        masking: bool,
+        masking_color: str,
+    ):
         bg = ""
         try:
             min_, max_, interval = grdimage_min_max_interval(remote_data, coord_r)
@@ -1731,18 +1818,20 @@ class GrdImage(ColorOptions):
             clamped_max = min(max_, high)
             limit = f"-G{clamped_min}/{clamped_max}"
             print("NORMAL")
-            if high ==0:
+            if high == 0:
                 print("LAUT")
-                min_round = round(min_/interval)*interval
-                limit = f"-T{min_round}/0/{interval} -M --COLOR_FOREGROUND=darkolivegreen3"
-            if low==0:
+                min_round = round(min_ / interval) * interval
+                limit = (
+                    f"-T{min_round}/0/{interval} -M --COLOR_FOREGROUND=darkolivegreen3"
+                )
+            if low == 0:
                 print("DEM")
-                max_round = round(max_/interval)*interval
+                max_round = round(max_ / interval) * interval
                 limit = f"-T0/{max_round}/{interval} -M --COLOR_BACKGROUND=azure"
 
         else:
             print("CUSTOM")
-            min_round = round(min_/interval)
+            min_round = round(min_ / interval)
             limit = f"-T{min_}/{max_}/{interval}"
 
         makecpt = f"gmt makecpt {limit} -C{selected_cpt} {bg}"
@@ -1782,7 +1871,9 @@ class GrdImage(ColorOptions):
         if self.grdimg_shading.get() == "on":
             shade = f"-I+a{self.grdimg_shading_az.get()}+nt1+m0"
 
-        if self.grd.get() in self.gmt_grd.grd_codes[0:4] + self.gmt_grd.grd_codes[6:] and hasattr(self, "cpt_script"):
+        if self.grd.get() in self.gmt_grd.grd_codes[0:4] + self.gmt_grd.grd_codes[
+            6:
+        ] and hasattr(self, "cpt_script"):
             cpt_file = f"-C{self.main.get_name.name}-Z.cpt"
             makecpt = f"{self.cpt_script} -Z -H > {cpt_file}\n"
         if self.masking.get():
@@ -2995,7 +3086,9 @@ class Legend:
                     self.widgets[i].deselect()
 
     def _widget_toggle_grd(self):
-        if hasattr(self.main.get_layers, "grdimage") and hasattr(self.main.get_layers.grdimage, "cpt_script"):
+        if hasattr(self.main.get_layers, "grdimage") and hasattr(
+            self.main.get_layers.grdimage, "cpt_script"
+        ):
             if self.widgets[7].cget("state") == DISABLED:
                 self.widgets[7].configure(state=NORMAL)
                 self.widgets[7].select()
@@ -3351,10 +3444,10 @@ G 0.2c
         type_ = self.main.get_layers.grdimage.gmt_grd.type
         font = "12p"
         sidebar = ""
-        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][1]==0:
-            sidebar="+ef0.3c"
-        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][0]==0:
-            sidebar="+eb0.3c"
+        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][1] == 0:
+            sidebar = "+ef0.3c"
+        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][0] == 0:
+            sidebar = "+eb0.3c"
         offset, width = self.z_ow
         elev_label = f"-Bx+l{type_} -By+l{unit} --FONT_LABEL={font} --FONT_ANNOT={font} --MAP_FRAME_PEN=0.75p\n"
         elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h{sidebar} -C{self.main.get_name.name}-Z.cpt {elev_label}\n"

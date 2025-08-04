@@ -27,6 +27,7 @@ setup(
         "psutil",
         "CTkToolTip",
         "CTkColorPicker",
+        "CTkMessagebox",
     ],
     include_package_data=True,
     entry_points={"console_scripts": ["gmt_pyplotter = gmt_pyplotter.main:main"]},
