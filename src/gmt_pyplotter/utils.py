@@ -1,4 +1,4 @@
-import os, subprocess, csv, math
+import os, sys, subprocess, csv, math
 from datetime import datetime, timedelta
 from dateutil import parser
 from typing import Union, Dict
@@ -6,6 +6,20 @@ from urllib.request import urlretrieve, urlopen
 from urllib.error import URLError
 
 
+def open_file_default_app(messagebox,file_to_open):
+    try:
+        if sys.platform == "win32":
+            os.startfile(file_to_open)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", file_to_open])
+        else:
+            subprocess.Popen(["xdg-open", file_to_open])
+    except FileNotFoundError as e:
+        messagebox.showerror(
+            "Error", f"Could not open file: {e}\nIs '{file_to_open}' avalid path?"
+        )
+    except Exception as e:
+        messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 def file_writer(output_file: str, flag: str, text: str):
     with open(output_file, flag, encoding="utf-8") as file:
         file.write(text)
@@ -244,7 +258,7 @@ def find_datetime_stats(
     return info
 
 
-def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth):
+def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth, queue):
 
     url_gcmt = "https://www.globalcmt.org/cgi-bin/globalcmt-cgi-bin/CMT5/form?itype=ymd&yr={}&mo={}&day={}&otype=ymd&oyr={}&omo={}&oday={}&lmw={}&umw={}&llat={}&ulat={}&llon={}&ulon={}&lhd={}&uhd={}&list=6".format(
         date[0].strftime("%Y"),
@@ -281,12 +295,16 @@ def gcmt_downloader(dir_name, coord, date: list[datetime], mag, depth):
             )
 
             print("done..")
-            status = "good"
+            msg = "Focal mechanism data succesfully downloaded"
+            queue.put(("COMPLETE", msg))
         else:
-            status = "empty"
-        return status
+            msg = "No focal mechanism found, change the search parameters"
+            queue.put(("FAILED", msg))
+
     except URLError:
-        print("Failed connecting to GlobalCMT data server..")
+        msg = "Failed connecting to GlobalCMT data server.."
+        print(msg)
+        queue.put(("FAILED", msg))
 
 
 def calculate_mw(mrr, mtt, mpp, mrt, mrp, mtp, iexp):
@@ -330,13 +348,7 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 print(f"    Error processing row: {row}. Error: {e}")
 
 
-def usgs_downloader(
-    dir_name: str,
-    coord,
-    date: list[datetime],
-    mag,
-    depth,
-):
+def usgs_downloader(dir_name: str, coord, date: list[datetime], mag, depth, queue):
     print("download usgs catalog")
     print(f"file path = {dir_name}")
     print(f"coord= {coord}")
@@ -364,15 +376,20 @@ def usgs_downloader(
                 [2, 1, 3, 4, 0],
             )
             print("\n Done.. \n")
-            status = "good"
+
+            msg = "USGS catalog data succesfully downloaded"
+            queue.put(("COMPLETE", msg))
         else:
-            status = "empty"
-        return status
+            msg = "No data found, change the search parameters"
+            queue.put(("FAILED", msg))
+
     except URLError:
-        print("Failed connecting to USGS data server..")
+        msg = "Failed connecting to USGS data server.."
+        print(msg)
+        queue.put(("FAILED", msg))
 
 
-def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
+def isc_downloader(dir_name, coord, date: list[datetime], mag, depth, queue):
 
     url_isc = "https://www.isc.ac.uk/cgi-bin/web-db-run?request=COMPREHENSIVE&out_format=CATCSV&searchshape=RECT"
 
@@ -415,12 +432,17 @@ def isc_downloader(dir_name, coord, date: list[datetime], mag, depth):
                 [6, 5, 7, 11, 3, 4],
             )
             print("done..")
-            status = "good"
+
+            msg = "ISC catalog data succesfully downloaded"
+            queue.put(("COMPLETE", msg))
         else:
-            status = "empty"
-        return status
+            msg = "No data found, change the search parameters"
+            queue.put(("FAILED", msg))
+
     except URLError:
-        print("Failed connecting to ISC data server..")
+        msg = "Failed connecting to ISC data server.."
+        print(msg)
+        queue.put(("FAILED", msg))
 
 
 match os.name:

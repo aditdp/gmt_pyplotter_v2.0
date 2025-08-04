@@ -30,7 +30,7 @@ from customtkinter import (
     DISABLED,
     NORMAL,
 )
-from gmt_pyplotter.utils import (
+from gmt_pyplotter.utils import (open_file_default_app,
     file_writer,
     longitude_to_km,
     find_numeric_stats,
@@ -322,13 +322,15 @@ class MapFileName(CTkFrame):
         ext_option.grid(row=2, column=3, columnspan=2, sticky="ew", padx=5, pady=3)
         CTkScrollableDropdown(
             ext_option,
-            values=[".png", ".pdf", ".jpg"],
+            values=[".png", ".PNG", ".pdf", ".jpg", ".bmp", ".eps", ".tif",".ppm"],
             width=100,
             resize=False,
             scrollbar=False,
-            command=lambda e: ext_option.configure(text=e),
+            command=lambda e: self.update_file_extension(ext_option, e),
         )
-
+    def update_file_extension(self, widget:CTkButton, e):
+        widget.configure(text=e)
+        self.extension.set(e)
     @property
     def name(self):
         return self.file_name.get()
@@ -352,6 +354,9 @@ class MapFileName(CTkFrame):
     @property
     def dir_name_script(self):
         return os.path.join(self.output_dir.get(), self.name_script)
+    @property
+    def dir_prename_script(self):
+        return os.path.join(self.output_dir.get(), f"prev_{self.name_script}")
 
     @property
     def dir_name_map(self):
@@ -359,7 +364,7 @@ class MapFileName(CTkFrame):
 
     @property
     def dir_prename_map(self):
-        return os.path.join(self.output_dir.get(), f"preview_{self.name_map}")
+        return os.path.join(self.output_dir.get(), f"preview_{self.name}.png")
 
 
 class MapCoordinate(CTkFrame):
@@ -663,7 +668,7 @@ class LayerMenu:
 
         self.layers = []
         self.add_remove_layer()
-        MapPreview(self.main, self.button_frame)
+        self.previewing = MapPreview(self.main, self.button_frame)
 
     def add_remove_layer(self):
         del_tab_button = CTkButton(
@@ -849,7 +854,14 @@ class MapPreview:
         refresh_logotk = CTkImage(
             dark_image=dark_refresh_logo, light_image=light_refresh_logo, size=(18, 18)
         )
+        self.button_final_map = CTkButton(
+            self.button_,
+            text="Generate Map",
+            width=100,
+            command=lambda: self.generate_final_map(),
+        )
         self.button_preview.pack(side="left", padx=(10, 0))
+        self.button_final_map.pack(side="right", padx=(0, 20))
         self.button_preview_refresh = CTkButton(
             self.button_,
             image=refresh_logotk,
@@ -860,20 +872,30 @@ class MapPreview:
             anchor="e",
             command=lambda: self.map_preview_refresh(),
         )
-
+    def generate_final_map(self):
+        script_name = self.main.get_name.name_script
+        
+        self.print_script()
+        self.gmt_execute(script_name, self.preview_queue, use_="final")
+    def toggle_button_preview(self, status:bool):
+        if status:
+            self.button_preview_refresh.configure(state=NORMAL)
+            
+        else:
+            self.button_preview_refresh.configure(state=DISABLED)
+            
     def map_preview_toggle(self):
         if self.preview_status == "off":
             self.prev_coord = {r.get() for r in roi}
             self.button_preview.configure(state=DISABLED)
-            self.print_script()
+            self.print_script(True)
 
             self.threading_process(
                 self.gmt_execute,
                 args=[
-                    self.main.get_name.name_script,
-                    self.main.get_name.output_dir.get(),
+                    f"prev_{self.main.get_name.name_script}"
                 ],
-                name="generate Preview Map",
+                name="generate Preview Map",use_="preview"
             )
 
         else:
@@ -927,15 +949,14 @@ class MapPreview:
         self.button_preview.configure(state=DISABLED)
         self.button_preview_refresh.configure(state=DISABLED)
         self.block_canvas_loading()
-        self.print_script()
+        self.print_script(True)
         self.threading_process(
             self.gmt_execute,
             args=[
-                self.main.get_name.name_script,
-                self.main.get_name.output_dir.get(),
+                f"prev_{self.main.get_name.name_script}"
             ],
             name="refresh Preview Map",
-            refresh=True,
+            use_="refresh",
         )
 
     def block_canvas_loading(self):
@@ -983,60 +1004,64 @@ class MapPreview:
         self.button_preview.configure(state=NORMAL)
         self.button_preview_refresh.configure(state=NORMAL)
 
-    def print_script(self):
-
+    def print_script(self, preview=False):
+        prefix=""
+        exten = self.main.get_name.extension.get()[1:]
+        gmt_script_file = self.main.get_name.dir_name_script
+        if preview:
+            prefix = "preview_"
+            exten = "png"
+            gmt_script_file = self.main.get_name.dir_prename_script
         bounds = self.main.get_coordinate.coord_r
 
         fname = self.main.get_name.file_name.get()
-        exten = self.main.get_name.extension.get()[1:]
-        temp_script = self.main.get_name.dir_name_script
-        if os.path.exists(temp_script):
-            os.remove(temp_script)
-        with open((temp_script), "a", encoding="utf-8") as prev_script:
+        if os.path.exists(gmt_script_file):
+            os.remove(gmt_script_file)
+        with open((gmt_script_file), "a", encoding="utf-8") as script_text:
 
             _layers = self.main.get_layers
             width = round(float(self.main.get_projection.proj_width.get()))
-            prev_script.write(f"gmt begin preview_{fname} {exten}\n")
-            prev_script.write(
+            script_text.write(f"gmt begin {prefix}{fname} {exten}\n")
+            script_text.write(
                 "\tgmt set MAP_ANNOT_OBLIQUE lon_horizontal,lat_parallel\n"
             )
-            prev_script.write("\tgmt set GMT_DATA_SERVER singapore\n")
-            prev_script.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
+            script_text.write("\tgmt set GMT_DATA_SERVER singapore\n")
+            script_text.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
             if "Earth relief" in _layers.layers:
-                prev_script.write(f"\t{_layers.grdimage.script}\n")
+                script_text.write(f"\t{_layers.grdimage.script}\n")
 
             if "Coastal line" in _layers.layers:
-                prev_script.write(f"\t{_layers.coast.script}\n")
+                script_text.write(f"\t{_layers.coast.script}\n")
 
             if "Contour line" in _layers.layers:
-                prev_script.write(f"\t{_layers.contour.script}\n")
+                script_text.write(f"\t{_layers.contour.script}\n")
             if "Cosmetics" in _layers.layers:
-                prev_script.write(f"\t{_layers.cosmetics.script_grid}\n")
+                script_text.write(f"\t{_layers.cosmetics.script_grid}\n")
 
             if "Regional tectonics" in _layers.layers:
-                prev_script.write(f"\t{_layers.tectonics.script}\n")
+                script_text.write(f"\t{_layers.tectonics.script}\n")
 
             if "Earthquake plot" in _layers.layers:
-                prev_script.write(f"\t{_layers.earthquake.script}\n")
+                script_text.write(f"\t{_layers.earthquake.script}\n")
 
             if "Focal mechanism" in _layers.layers:
-                prev_script.write(f"\t{_layers.focmec.script}\n")
+                script_text.write(f"\t{_layers.focmec.script}\n")
 
             if "Map inset" in _layers.layers:
-                prev_script.write(f"\t{_layers.inset.script}\n")
+                script_text.write(f"\t{_layers.inset.script}\n")
 
             if "Legend" in _layers.layers:
-                prev_script.write(f"\t{_layers.legend.script}\n")
+                script_text.write(f"\t{_layers.legend.script}\n")
 
             if "Cosmetics" in _layers.layers:
-                prev_script.write(f"\t{_layers.cosmetics.script}\n")
+                script_text.write(f"\t{_layers.cosmetics.script}\n")
 
-            prev_script.write("gmt end\n")
+            script_text.write("gmt end\n")
 
-    def threading_process(self, worker, args, name, refresh=False):
+    def threading_process(self, worker, args, name, use_):
         def thread_wrapper():
             try:
-                worker(*args, self.preview_queue, refresh)
+                worker(*args, self.preview_queue, use_)
             except Exception as e:
                 self.preview_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
 
@@ -1044,8 +1069,9 @@ class MapPreview:
         self.process_thread.daemon = False
         self.process_thread.start()
 
-    def gmt_execute(self, script_name, output_dir, main_queue: queue.Queue, refresh):
+    def gmt_execute(self, script_name,  main_queue: queue.Queue, use_:str):
         cwd = os.getcwd()
+        output_dir = self.main.get_name.output_dir.get()
         os.chdir(output_dir)
 
         if os.name == "posix":
@@ -1092,13 +1118,17 @@ class MapPreview:
                 f"[{threading.current_thread().name}] Process finished with code: {return_code}"
             )
             if return_code == 0:
-                if refresh == False:
+                if use_ == "preview":
                     main_queue.put(
                         ("COMPLETE", True, "GMT script executed successfully.")
                     )
-                else:
+                elif use_ =="refresh":
                     main_queue.put(
                         ("REFRESHED", True, "GMT script executed successfully.")
+                    )
+                else:
+                    main_queue.put(
+                        ("FINAL", True, "Final map successfully generated.")
                     )
             else:
                 main_queue.put(
@@ -1130,13 +1160,17 @@ class MapPreview:
         try:
             message_type, *data = self.preview_queue.get_nowait()
             if message_type == "COMPLETE":
+                if not data[0]:
+                    print(data[1])
+                    self.map_preview_off()
+                    return
                 success_status, message = data
                 self.map_preview_on(success_status, message)
             elif message_type == "REFRESHED":
                 self.refreshed()
-            if not data[0]:
-                print(data[1])
-                self.map_preview_off()
+            else:
+                file = self.main.get_name.dir_name_map
+                open_file_default_app(messagebox, file)
 
         except queue.Empty:
             pass
@@ -1382,20 +1416,8 @@ class ColorOptions:
     @staticmethod
     def color_palette():
         dir_ = Path(__file__).resolve().parent
-        cpt_ = os.path.join(dir_, "image", "GMT_CPTchart.png")
-        try:
-            if sys.platform == "win32":
-                os.startfile(cpt_)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", cpt_])
-            else:
-                subprocess.Popen(["xdg-open", cpt_])
-        except FileNotFoundError as e:
-            messagebox.showerror(
-                "Error", f"Could not open file: {e}\nIs '{cpt_}' a valid path?"
-            )
-        except Exception as e:
-            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+        file_to_open = os.path.join(dir_, "image", "GMT_CPTchart.png")
+        open_file_default_app(messagebox, file_to_open)
 
     @staticmethod
     def gmt_color_table(frame):
@@ -2242,12 +2264,16 @@ class Earthquake(LayerMenu):
 
     def __init__(self, tab, main: MainApp, dates: tuple[StringVar, StringVar]):
         self.main = main
+        self.previewing = self.main.get_layers.previewing
         self.eq_catalog = StringVar(tab, value="USGS")
         self.dates = dates
         self.magnitudes = (DoubleVar(tab, value=0), DoubleVar(tab, value=10))
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = DoubleVar(tab, 1)
         self.already_downloaded = BooleanVar(tab, value=False)
+        self.previewing.button_preview.configure(state=DISABLED)
+        self.previewing.button_preview_refresh.configure(state=DISABLED)
+        
         self.download_queue = queue.Queue()
         labels = {
             "Catalog": "",
@@ -2270,6 +2296,43 @@ class Earthquake(LayerMenu):
         self.button_downloader(tab)
         self.button_show_catalog(tab)
         self.add_tracers()
+    def popup_message(self, message, icon="warning"):
+
+        CTkMessagebox(
+            self.main,
+            title="Failed download earthquake data",
+            message=message,
+            option_1="OK",
+            option_focus=1,
+            icon=icon,
+            wraplength=300,
+            fade_in_duration=100,
+            font=("Consolas", 14),
+        )
+
+
+        
+    def _check_queue(self):
+        try:
+            message_type, msg = self.download_queue.get_nowait()
+            if message_type == "COMPLETE":
+                self.previewing.button_preview.configure(state=NORMAL)
+                self.previewing.button_preview_refresh.configure(state=NORMAL)
+                self.download_button.configure(state=DISABLED)
+                self.already_downloaded.set(True)
+                self.popup_message(msg, "check")
+            else:
+                self.previewing.button_preview.configure(state=DISABLED)
+                self.previewing.button_preview_refresh.configure(state=DISABLED)
+                self.download_button.configure(state=NORMAL)
+                self.already_downloaded.set(False)
+                self.popup_message(msg)
+
+
+        except queue.Empty:
+            pass
+
+        self.main.after(100, self._check_queue)
 
     def add_tracers(self):
         self.prev_coord = set()
@@ -2301,6 +2364,8 @@ class Earthquake(LayerMenu):
         if self.download_button.cget("state") == DISABLED:
             self.already_downloaded.set(False)
             self.download_button.configure(state=NORMAL)
+            self.previewing.button_preview.configure(state=DISABLED)
+            self.previewing.button_preview_refresh.configure(state=DISABLED)
 
     def button_downloader(self, tab):
         self.download_button = CTkButton(
@@ -2368,8 +2433,6 @@ class Earthquake(LayerMenu):
 
     def download_catalog(self):
         print("download start")
-        self.download_button.configure(state=DISABLED)
-        self.already_downloaded.set(True)
         self.roi_changes_check()
         server = {
             "GlobalCMT": gcmt_downloader,
@@ -2383,7 +2446,7 @@ class Earthquake(LayerMenu):
             self.main.get_coordinate.coord,
             self.date_strp,
             [self.magnitudes[0].get(), self.magnitudes[1].get()],
-            [self.depths[0].get(), self.depths[1].get()],
+            [self.depths[0].get(), self.depths[1].get()],self.download_queue,
         )
 
         source = server[self.catalog.get()]
@@ -2394,6 +2457,7 @@ class Earthquake(LayerMenu):
         )
         self.download_thread.daemon = False
         self.download_thread.start()
+        self._check_queue()
 
     def parameter_depth_scale(self, opti, row):
 
@@ -2585,12 +2649,9 @@ class Focmec(Earthquake):
 
     @property
     def script(self):
-
         makecpt, cpt_file = self.makecpt
-
         if hasattr(self.main.get_layers, "earthquake"):
             makecpt = ""
-
         return f"{makecpt}\tgmt meca {self.eq_file} -Sd{self.fm_scaller}c+f0 -C{cpt_file} -Lfaint,grey30 -Ve\n"
 
 
@@ -3478,7 +3539,8 @@ G 0.2c
 
     @property
     def script(self):
-
+        if not any(var.get() for var in self.toggle.values()):
+            return ""
         pen = ""
         if self.toggle["frame"].get():
             pen = "+p1p"
