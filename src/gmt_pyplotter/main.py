@@ -30,7 +30,9 @@ from customtkinter import (
     DISABLED,
     NORMAL,
 )
-from gmt_pyplotter.utils import (open_file_default_app,
+from gmt_pyplotter.utils import (
+    check_error_obtain_gmt_remote_data,
+    open_file_default_app,
     file_writer,
     longitude_to_km,
     find_numeric_stats,
@@ -69,6 +71,7 @@ class MainApp(ctk.CTk):
         self.minsize(700, 550)
         self.resize_image("map_simple_0.png")
         self.resize_image("map_relief_0.jpg")
+        self.resizable(width=False, height=False)
         output_dir = self.load_state()
         self.frame_map_param = CTkFrame(self, width=210, height=550)
         self.frame_layers = CTkFrame(self, width=480, height=550)
@@ -80,14 +83,91 @@ class MainApp(ctk.CTk):
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
         self.get_projection = MapProjection(self, self.frame_map_param)
         self.get_layers = LayerMenu(self, self.frame_layers)
-        button = CTkButton(
-            self.frame_map_param, text="scale", command=lambda: self.scalling()
-        )
-        button.place(relx=0, rely=0.95)
-        self.orig = True
+        if os.name == "nt":
+            self.button_gui_scaling()
+        self.cur_scale = 1
         self.protocol("WM_DELETE_WINDOW", self.closing)
         self.after(500, self.is_gmt_installed)
         self.mainloop()
+
+    def button_gui_scaling(self):
+        image_paths = {
+            "smaller": {
+                "dark": "dark_gui_smaller.png",
+                "light": "light_gui_smaller.png",
+            },
+            "larger": {"dark": "dark_gui_larger.png", "light": "light_gui_larger.png"},
+        }
+
+        gui_icons = {}
+
+        for key, paths in image_paths.items():
+            dark_path = os.path.join(script_dir, "image", paths["dark"])
+            light_path = os.path.join(script_dir, "image", paths["light"])
+
+            gui_icons[key] = CTkImage(
+                dark_image=Image.open(dark_path),
+                light_image=Image.open(light_path),
+                size=(20, 20),
+            )
+
+        self.button_gui_smaller = CTkButton(
+            self.frame_map_param,
+            image=gui_icons["smaller"],
+            text="",
+            width=40,
+            command=lambda: self.scalling("-"),
+        )
+        self.button_gui_larger = CTkButton(
+            self.frame_map_param,
+            image=gui_icons["larger"],
+            text="",
+            width=40,
+            command=lambda: self.scalling("+"),
+        )
+        self.button_gui_larger.place(relx=0.01, rely=0.94)
+        self.button_gui_smaller.place(relx=0.22, rely=0.94)
+
+    def scalling(self, direction):
+        scale_levels = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+        screen_height = self.winfo_screenheight()
+        if screen_height < 770:
+            scale_levels = scale_levels[:4]
+        elif screen_height < 1100:
+            scale_levels = scale_levels[1:5]
+        else:
+            scale_levels = scale_levels[2:]
+
+        current_index = scale_levels.index(self.cur_scale)
+
+        if direction == "+":
+            if current_index < len(scale_levels) - 1:
+                new_scale = scale_levels[current_index + 1]
+            else:
+                new_scale = self.cur_scale
+        elif direction == "-":
+            if current_index > 0:
+                new_scale = scale_levels[current_index - 1]
+            else:
+                new_scale = self.cur_scale
+        else:
+            print("Invalid scaling direction. Use 'increase' or 'decrease'.")
+            return
+
+        ctk.set_widget_scaling(new_scale / scalefactor)
+        ctk.set_window_scaling(new_scale / scalefactor)
+        self.cur_scale = new_scale
+        print(self.cur_scale)
+        self.button_gui_larger.place(relx=0.01, rely=0.94)
+        self.button_gui_smaller.place(relx=0.22, rely=0.94)
+        if self.cur_scale == max(scale_levels):
+            self.button_gui_larger.place_forget()
+        if self.cur_scale == min(scale_levels):
+            self.button_gui_smaller.place_forget()
+
+        if self.get_layers.previewing.preview_status == "on":
+            self.get_layers.previewing.map_preview_off()
+            self.get_layers.previewing.map_preview_on(True)
 
     def early_exit(self, status: int = 0):
         gmt_url = "https://docs.generic-mapping-tools.org/latest/install.html"
@@ -183,19 +263,23 @@ class MainApp(ctk.CTk):
                     )
 
         except IOError:
-            messagebox.showerror(
-                "Error", f"Unable to open file '{file}', file not found"
+            self.popup_message(
+                "Error", f"Unable to open file '{file}', file not found", "cancel"
             )
 
-    def scalling(self):
-        if self.orig == False:
-            ctk.set_widget_scaling(1 / scalefactor)
-            ctk.set_window_scaling(1 / scalefactor)
-            self.orig = True
-        else:
-            ctk.set_widget_scaling(1)
-            ctk.set_window_scaling(1)
-            self.orig = False
+    def popup_message(self, title, message, icon="warning"):
+
+        CTkMessagebox(
+            self,
+            title=title,
+            message=message,
+            option_1="OK",
+            option_focus=1,
+            icon=icon,
+            wraplength=300,
+            fade_in_duration=100,
+            font=("Consolas", 12),
+        )
 
     def save_state(self):
         state = {
@@ -272,9 +356,8 @@ class MapFileName(CTkFrame):
             else:
                 folder_exist.set(False)
                 outdir_entry.configure(fg_color="red")
-                messagebox.showerror(
-                    title="Invalid directory",
-                    message="The directory is not valid",
+                self.main.popup_message(
+                    "Invalid directory", "The directory is not valid"
                 )
 
         dark_directory_logo = Image.open(
@@ -317,20 +400,22 @@ class MapFileName(CTkFrame):
 
     def file_extension(self, frame):
         ext_option = CTkButton(
-            frame, width=50, text="png", fg_color="#565B5E", hover_color="#7A848D"
+            frame, width=50, text=".png", fg_color="#565B5E", hover_color="#7A848D"
         )
         ext_option.grid(row=2, column=3, columnspan=2, sticky="ew", padx=5, pady=3)
         CTkScrollableDropdown(
             ext_option,
-            values=[".png", ".PNG", ".pdf", ".jpg", ".bmp", ".eps", ".tif",".ppm"],
+            values=[".png", ".PNG", ".pdf", ".jpg", ".bmp", ".eps", ".tif", ".ppm"],
             width=100,
             resize=False,
             scrollbar=False,
             command=lambda e: self.update_file_extension(ext_option, e),
         )
-    def update_file_extension(self, widget:CTkButton, e):
+
+    def update_file_extension(self, widget: CTkButton, e):
         widget.configure(text=e)
         self.extension.set(e)
+
     @property
     def name(self):
         return self.file_name.get()
@@ -354,6 +439,7 @@ class MapFileName(CTkFrame):
     @property
     def dir_name_script(self):
         return os.path.join(self.output_dir.get(), self.name_script)
+
     @property
     def dir_prename_script(self):
         return os.path.join(self.output_dir.get(), f"prev_{self.name_script}")
@@ -371,7 +457,7 @@ class MapCoordinate(CTkFrame):
     def __init__(self, main: MainApp, mainframe):
         super().__init__(mainframe)
         self.main = main
-        self.place(relx=0.01, rely=0.27, relheight=0.40, relwidth=0.95)
+        self.place(relx=0.01, rely=0.27, relheight=0.35, relwidth=0.95)
 
         for i in range(5):
             if i in [0, 3, 4]:
@@ -483,7 +569,7 @@ class MapProjection(CTkFrame):
         CTkFrame.__init__(self, master=mainframe)
         self.main = main
         main.get_name
-        self.place(relx=0.01, rely=0.69, relheight=0.29, relwidth=0.95)
+        self.place(relx=0.01, rely=0.64, relheight=0.29, relwidth=0.95)
         self.projection_name = StringVar(self, value="Mercator")
         self.projection_option = StringVar(self, value="width")
         self.proj_width = StringVar(self, value="20")
@@ -709,13 +795,20 @@ class LayerMenu:
 
     def delete_tab(self):
         active_tab = self.layer_control.get()
-        delete_layer = messagebox.askyesno(
-            message=f"Delete layer: '{active_tab}' ?",
+        delete_layer = CTkMessagebox(
+            self.main,
             title="Deleting layer..",
+            message=f"Delete layer: '{active_tab}' ?",
+            option_2="Yes",
+            option_1="No",
+            option_focus=2,
+            icon="warning",
+            wraplength=300,
+            fade_in_duration=100,
+            font=("Consolas", 12),
         )
 
-        if delete_layer == False:
-
+        if delete_layer == "Yes":
             return
         self.delete_variable(active_tab)
 
@@ -735,9 +828,13 @@ class LayerMenu:
                 self.contour.remove_traces()
                 del self.contour
             case "Earthquake plot":
+                if self.earthquake.after_id:
+                    self.main.after_cancel(self.earthquake.after_id)
                 self.earthquake.remove_tracers()
                 del self.earthquake
             case "Focal mechanism":
+                if self.focmec.after_id:
+                    self.main.after_cancel(self.focmec.after_id)
                 self.focmec.remove_tracers()
                 del self.focmec
             case "Regional tectonics":
@@ -757,7 +854,8 @@ class LayerMenu:
             new_layer = self.layer_control.add(layer)
         except ValueError:
             message = f"Already has tab '{layer}'"
-            messagebox.showerror("Tab Add Error", message)
+            self.previewing.popup_message("Tab Add Error", message)
+
             return
         self.layers.append(layer)
 
@@ -851,8 +949,14 @@ class MapPreview:
         light_refresh_logo = Image.open(
             os.path.join(script_dir, "image", "light_refresh.png")
         )
-        refresh_logotk = CTkImage(
+        off_refresh_logo = Image.open(
+            os.path.join(script_dir, "image", "off_refresh.png")
+        )
+        self.refresh_logotk = CTkImage(
             dark_image=dark_refresh_logo, light_image=light_refresh_logo, size=(18, 18)
+        )
+        self.off_refresh_logotk = CTkImage(
+            dark_image=off_refresh_logo, light_image=off_refresh_logo, size=(18, 18)
         )
         self.button_final_map = CTkButton(
             self.button_,
@@ -860,30 +964,35 @@ class MapPreview:
             width=100,
             command=lambda: self.generate_final_map(),
         )
+        self.button_final_map.pack(side="left", padx=(10, 10))
         self.button_preview.pack(side="left", padx=(10, 0))
-        self.button_final_map.pack(side="right", padx=(0, 20))
         self.button_preview_refresh = CTkButton(
             self.button_,
-            image=refresh_logotk,
+            image=self.refresh_logotk,
             text="",
             width=17,
-            hover_color=gray,
-            fg_color=dim_gray,
             anchor="e",
             command=lambda: self.map_preview_refresh(),
         )
+
     def generate_final_map(self):
         script_name = self.main.get_name.name_script
-        
         self.print_script()
-        self.gmt_execute(script_name, self.preview_queue, use_="final")
-    def toggle_button_preview(self, status:bool):
-        if status:
-            self.button_preview_refresh.configure(state=NORMAL)
-            
+        self.gmt_execute(script_name, use_="final")
+
+    def toggle_button_preview_refresh(self, status: str):
+        if status == "on":
+            self.button_preview_refresh.configure(
+                state=NORMAL, image=self.refresh_logotk
+            )
+
+        elif status == "off":
+            self.button_preview_refresh.configure(
+                state=DISABLED, image=self.off_refresh_logotk
+            )
         else:
-            self.button_preview_refresh.configure(state=DISABLED)
-            
+            self.button_preview_refresh.pack_forget()
+
     def map_preview_toggle(self):
         if self.preview_status == "off":
             self.prev_coord = {r.get() for r in roi}
@@ -892,48 +1001,52 @@ class MapPreview:
 
             self.threading_process(
                 self.gmt_execute,
-                args=[
-                    f"prev_{self.main.get_name.name_script}"
-                ],
-                name="generate Preview Map",use_="preview"
+                args=[f"prev_{self.main.get_name.name_script}"],
+                name="generate Preview Map",
+                use_="preview",
             )
 
         else:
             self.map_preview_off()
             self.preview_status = "off"
-            self.button_preview_refresh.pack_forget()
+            self.toggle_button_preview_refresh("forget")
 
     def map_preview_on(self, success_status, message=""):
+        gui_scale = float(self.main.cur_scale)
         if not success_status:
             print(f"Map generation failed: {message}")
-            messagebox.showerror("Map Error", message)
+            self.popup_message("Map generation failed", message, "cancel")
 
             self.preview_status = "off"
             self.button_preview.configure(state=NORMAL)
-            self.button_preview_refresh.pack_forget()
+            self.toggle_button_preview_refresh("forget")
             return
         print(message)
-        self.preview_status = "on"
         cur_x = self.main.winfo_x()
         cur_y = self.main.winfo_y()
 
         new_width = self.loading_image()
-        resize = f"{new_width}x550+{cur_x}+{cur_y}"
+        resize = f"{new_width+10}x550+{cur_x}+{cur_y}"
 
         self.main.geometry(resize)
 
-        self.main.frame_map_param.pack(side="left", expand=True, fill="both")
+        self.main.frame_map_param.pack(side="left", expand=False, fill="both")
         self.main.frame_layers.pack(side="left", expand=False, fill="both")
 
         self.frame_preview = CTkFrame(self.main, height=550, width=new_width - 680)
 
         self.frame_preview.pack(side="left", fill="both", anchor="nw")
-        self.canvas = Canvas(self.frame_preview, width=new_width - 680, height=550)
+        self.canvas = Canvas(
+            self.frame_preview,
+            width=gui_scale * (new_width - 680),
+            height=gui_scale * 550,
+        )
         self.canvas.pack(expand=True, fill="both")
-        self.button_preview_refresh.pack(side="left")
+        self.button_preview_refresh.pack(side="left", padx=3)
         self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
         self.button_preview.configure(state=NORMAL)
-        self.button_preview_refresh.configure(state=NORMAL)
+        self.preview_status = "on"
+        self.toggle_button_preview_refresh("on")
 
     def map_preview_off(self):
         self.frame_preview.destroy()
@@ -947,14 +1060,12 @@ class MapPreview:
     def map_preview_refresh(self):
 
         self.button_preview.configure(state=DISABLED)
-        self.button_preview_refresh.configure(state=DISABLED)
+        self.toggle_button_preview_refresh("off")
         self.block_canvas_loading()
         self.print_script(True)
         self.threading_process(
             self.gmt_execute,
-            args=[
-                f"prev_{self.main.get_name.name_script}"
-            ],
+            args=[f"prev_{self.main.get_name.name_script}"],
             name="refresh Preview Map",
             use_="refresh",
         )
@@ -1002,10 +1113,10 @@ class MapPreview:
 
         self.canvas.delete("loading")
         self.button_preview.configure(state=NORMAL)
-        self.button_preview_refresh.configure(state=NORMAL)
+        self.toggle_button_preview_refresh("on")
 
     def print_script(self, preview=False):
-        prefix=""
+        prefix = ""
         exten = self.main.get_name.extension.get()[1:]
         gmt_script_file = self.main.get_name.dir_name_script
         if preview:
@@ -1061,15 +1172,15 @@ class MapPreview:
     def threading_process(self, worker, args, name, use_):
         def thread_wrapper():
             try:
-                worker(*args, self.preview_queue, use_)
+                worker(*args, use_)
             except Exception as e:
-                self.preview_queue.put(("COMPLETE", False, f"Worker thread error: {e}"))
+                self.preview_queue.put(("FAIL", f"Worker thread error: {e}"))
 
         self.process_thread = threading.Thread(target=thread_wrapper, name=name)
         self.process_thread.daemon = False
         self.process_thread.start()
 
-    def gmt_execute(self, script_name,  main_queue: queue.Queue, use_:str):
+    def gmt_execute(self, script_name, use_: str):
         cwd = os.getcwd()
         output_dir = self.main.get_name.output_dir.get()
         os.chdir(output_dir)
@@ -1084,7 +1195,7 @@ class MapPreview:
                 command = f"./{script_name}"
 
         try:
-            print(f"Running '{output_dir}/{script_name}' in background")
+            print(f"Running '{script_name}' in background")
 
             process = subprocess.Popen(
                 command,
@@ -1097,54 +1208,48 @@ class MapPreview:
 
             stdout_reader_thread = threading.Thread(
                 target=self._read_pipe,
-                args=(process.stdout, main_queue, "STDOUT"),
+                args=(process.stdout, self.preview_queue, "STDOUT"),
                 name=f"{threading.current_thread().name}-StdoutReader",
             )
             stderr_reader_thread = threading.Thread(
                 target=self._read_pipe,
-                args=(process.stderr, main_queue, "STDERR"),
+                args=(process.stderr, self.preview_queue, "STDERR"),
                 name=f"{threading.current_thread().name}-StderrReader",
             )
 
             stdout_reader_thread.start()
             stderr_reader_thread.start()
 
-            return_code = process.wait()
+            _ = process.wait()
 
             stdout_reader_thread.join()
             stderr_reader_thread.join()
 
             print(
-                f"[{threading.current_thread().name}] Process finished with code: {return_code}"
+                f"[{threading.current_thread().name}] Process finished with code: {process.returncode}"
             )
-            if return_code == 0:
-                if use_ == "preview":
-                    main_queue.put(
-                        ("COMPLETE", True, "GMT script executed successfully.")
-                    )
-                elif use_ =="refresh":
-                    main_queue.put(
-                        ("REFRESHED", True, "GMT script executed successfully.")
-                    )
-                else:
-                    main_queue.put(
-                        ("FINAL", True, "Final map successfully generated.")
-                    )
+
+            # check_error_obtain_gmt_remote_data(stderr=gmt_stderr)
+
+            if process.returncode == 0:
+                self.preview_queue.put(("COMPLETE", use_))
+
             else:
-                main_queue.put(
+                self.preview_queue.put(
                     (
-                        "COMPLETE",
-                        False,
-                        f"GMT script failed. Code: {return_code}",
+                        "FAIL",
+                        f"GMT script failed. Code: {process.returncode}",
                     )
                 )
 
         except FileNotFoundError as e:
-            main_queue.put(
-                ("COMPLETE", False, f"Error: Program '{command}' not found. ({e})")
+            self.preview_queue.put(
+                ("FAIL", f"Error: Program '{command}' not found. ({e})")
             )
+        except ConnectionError as e:
+            self.preview_queue.put(("FAIL", e))
         except Exception as e:
-            main_queue.put(("COMPLETE", False, f"An unexpected error occurred: {e}"))
+            self.preview_queue.put(("FAIL", f"An unexpected error occurred: {e}"))
         finally:
             os.chdir(cwd)
 
@@ -1158,32 +1263,52 @@ class MapPreview:
 
     def _check_queue(self):
         try:
-            message_type, *data = self.preview_queue.get_nowait()
-            if message_type == "COMPLETE":
-                if not data[0]:
-                    print(data[1])
+            status, message = self.preview_queue.get_nowait()
+            if status == "COMPLETE":
+                if message == "refresh":
+                    self.refreshed()
+                elif message == "preview":
+                    self.map_preview_on(True, message)
+                elif message == "final":
+                    file = self.main.get_name.dir_name_map
+                    open_file_default_app(self.popup_message, file)
+            elif status == "FAIL":
+                print(message)
+                self.popup_message("Error", message, "cancel")
+                if self.preview_status == "on":
                     self.map_preview_off()
-                    return
-                success_status, message = data
-                self.map_preview_on(success_status, message)
-            elif message_type == "REFRESHED":
-                self.refreshed()
-            else:
-                file = self.main.get_name.dir_name_map
-                open_file_default_app(messagebox, file)
+                self.button_preview.configure(state=NORMAL)
+                self.toggle_button_preview_refresh("remove")
+
+                return
 
         except queue.Empty:
             pass
 
-        self.main.after(100, self._check_queue)
+        self.main.after(500, self._check_queue)
 
     def loading_image(self):
+        gui = float(self.main.cur_scale)
         image = Image.open(self.main.get_name.dir_prename_map)
         ratio = image.width / image.height
         new_width = int(700 + (ratio * 550))
-        image_resize = image.resize((int((new_width - 710)), int(540)))
+        image_resize = image.resize((round(gui * (new_width - 710)), round(gui * 540)))
         self.imagetk = ImageTk.PhotoImage(image_resize)
         return new_width
+
+    def popup_message(self, title, message, icon="warning"):
+
+        CTkMessagebox(
+            self.main,
+            title=title,
+            message=message,
+            option_1="OK",
+            option_focus=1,
+            icon=icon,
+            wraplength=300,
+            fade_in_duration=100,
+            font=("Consolas", 12),
+        )
 
 
 class GrdOptions:
@@ -1369,13 +1494,19 @@ class ColorOptions:
         light_picker_logo = Image.open(
             os.path.join(script_dir, "image", "light_eyedropper.png")
         )
-        color_picker_logotk = CTkImage(
+        self.color_picker_logotk = CTkImage(
             dark_image=dark_picker_logo, light_image=light_picker_logo, size=(20, 20)
+        )
+        off_picker_logo = Image.open(
+            os.path.join(script_dir, "image", "off_eyedropper.png")
+        )
+        self.off_color_picker_logotk = CTkImage(
+            dark_image=off_picker_logo, light_image=off_picker_logo, size=(20, 20)
         )
 
         self.select_color = CTkButton(
             master,
-            image=color_picker_logotk,
+            image=self.color_picker_logotk,
             text="",
             command=lambda: self.color_chooser(var, widget),
             width=30,
@@ -1442,11 +1573,16 @@ class ColorOptions:
             else:
                 subprocess.Popen(["xdg-open", rgb_chart])
         except OSError as e:
-            messagebox.showerror(
-                "Error", f"Could not open file: {e}\nIs '{rgb_chart}' a valid path?"
+            MainApp.popup_message(
+                app,
+                title="Error",
+                message=f"Could not open file: {e}\nIs '{rgb_chart}' a valid path?",
             )
+
         except Exception as e:
-            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+            MainApp.popup_message(
+                app, title="Error", message=f"An unexpected error occurred: {e}"
+            )
 
     def label_color_preview(self, master, row, col, var):
         self.label_preview = CTkLabel(
@@ -1563,13 +1699,9 @@ class ColorOptions:
             if type(var) == CTkEntry:
                 var.configure(state=NORMAL)
             if type(var) == CTkButton:
-                dark_picker = Image.open(
-                    os.path.join(script_dir, "image", "dark_eyedropper.png")
+                var.configure(
+                    fg_color=dim_gray, image=self.color_picker_logotk, state=NORMAL
                 )
-                dark_logo = CTkImage(
-                    dark_image=dark_picker, light_image=dark_picker, size=(20, 20)
-                )
-                var.configure(fg_color=dim_gray, image=dark_logo, state=NORMAL)
 
     def widget_toggle_off(self, vars):
         for var in vars:
@@ -1577,13 +1709,12 @@ class ColorOptions:
             if type(var) == CTkEntry:
                 var.configure(state=DISABLED)
             if type(var) == CTkButton:
-                off_picker = Image.open(
-                    os.path.join(script_dir, "image", "off_eyedropper.png")
+
+                var.configure(
+                    fg_color="gray30",
+                    image=self.off_color_picker_logotk,
+                    state=DISABLED,
                 )
-                off_logo = CTkImage(
-                    dark_image=off_picker, light_image=off_picker, size=(20, 20)
-                )
-                var.configure(fg_color="gray30", image=off_logo, state=DISABLED)
 
     def color_toggle(self, _toggle, vars):
         if _toggle.get():
@@ -1628,10 +1759,10 @@ class Coast(ColorOptions):
         self.outline_color = StringVar(tab, "black")
         self.outline_thickness = StringVar(tab, value=ColorOptions.pens[1])
         labels = {
-            "Land Color": "The color of dry area or island",
-            "Sea Color": "The color of wet area like sea or lake",
+            "Land Color": "The color of dry area or island\nUncheck for not fill land",
+            "Sea Color": "The color of wet area like sea or lake\nUncheck for not fill sea surface",
             "Line color": "Line color of the coastal boundary",
-            "Outline size": "Line thickness of the coastal boundary",
+            "Outline size": "Pen thickness of the coastal boundary",
         }
         self.menu.parameter_labels(text, labels)
 
@@ -1665,7 +1796,7 @@ class GrdImage(ColorOptions):
     def __init__(self, main: MainApp, tab):
         self.main = main
         labels = {
-            "Grid data": "",
+            "Grid data": "Type of data used (elevation, seafloor age, day view, night view, magnetic, gravity)",
             "Grid resolution": "",
             "Color Palette Table": "",
             "Grid Shading": "",
@@ -1822,8 +1953,11 @@ class GrdImage(ColorOptions):
             print(f"min = {min_}")
             print(f"max = {max_}")
             print(f"intv= {interval}")
-        except ValueError:
-            print("errror di grdimage min max interval")
+        except ConnectionError as e:
+            self.main.get_layers.previewing.popup_message("Error", e, "warning")
+            return ""
+        except ValueError as e:
+            self.main.get_layers.previewing.popup_message("Error", e, "warning")
             return ""
         if masking:
             bg = f"-M --COLOR_BACKGROUND={masking_color}"
@@ -1999,9 +2133,8 @@ class Contour(ColorOptions):
 
             grdinfo = stdout.split("\t")
 
-            if "Unable to obtain remote file" in stderr:
-                message = f"Couldn't connect to GMT remote server for downloading {grd}{res} data.\nConnect to internet or change network connection."
-                raise ConnectionError(message)
+            check_error_obtain_gmt_remote_data(stderr, grd, res)
+
             min_ = grdinfo[5]
             max_ = grdinfo[6]
             if min_.lower() == "nan" or max_.lower() == "nan":
@@ -2058,7 +2191,7 @@ class Contour(ColorOptions):
         self.w_unit_annot.configure(text=self.gmt_grd.unit)
         self.entry_interval.configure(state=NORMAL, text_color="green")
         if rec == "":
-            messagebox.showerror("Error", status)
+            self.main.popup_message("Error", status)
             self.entry_interval.configure(text_color="yellow")
             self.interval[0].set("0")
             self.interval[1].set("0")
@@ -2271,9 +2404,10 @@ class Earthquake(LayerMenu):
         self.depths = (IntVar(tab, value=0), IntVar(tab, value=1000))
         self.circle_size = DoubleVar(tab, 1)
         self.already_downloaded = BooleanVar(tab, value=False)
+        self.previewing.button_final_map.configure(state=DISABLED)
         self.previewing.button_preview.configure(state=DISABLED)
-        self.previewing.button_preview_refresh.configure(state=DISABLED)
-        
+        self.previewing.toggle_button_preview_refresh("off")
+        self.after_id = None
         self.download_queue = queue.Queue()
         labels = {
             "Catalog": "",
@@ -2296,43 +2430,29 @@ class Earthquake(LayerMenu):
         self.button_downloader(tab)
         self.button_show_catalog(tab)
         self.add_tracers()
-    def popup_message(self, message, icon="warning"):
 
-        CTkMessagebox(
-            self.main,
-            title="Failed download earthquake data",
-            message=message,
-            option_1="OK",
-            option_focus=1,
-            icon=icon,
-            wraplength=300,
-            fade_in_duration=100,
-            font=("Consolas", 14),
-        )
-
-
-        
     def _check_queue(self):
         try:
             message_type, msg = self.download_queue.get_nowait()
             if message_type == "COMPLETE":
+                self.previewing.button_final_map.configure(state=NORMAL)
                 self.previewing.button_preview.configure(state=NORMAL)
-                self.previewing.button_preview_refresh.configure(state=NORMAL)
+                self.previewing.toggle_button_preview_refresh("on")
                 self.download_button.configure(state=DISABLED)
                 self.already_downloaded.set(True)
-                self.popup_message(msg, "check")
+                self.previewing.popup_message("Error", msg, "check")
             else:
+                self.previewing.button_final_map.configure(state=DISABLED)
                 self.previewing.button_preview.configure(state=DISABLED)
-                self.previewing.button_preview_refresh.configure(state=DISABLED)
+                self.previewing.toggle_button_preview_refresh("off")
                 self.download_button.configure(state=NORMAL)
                 self.already_downloaded.set(False)
-                self.popup_message(msg)
-
+                self.previewing.popup_message("Error", msg)
 
         except queue.Empty:
             pass
 
-        self.main.after(100, self._check_queue)
+        self.after_id = self.main.after(100, self._check_queue)
 
     def add_tracers(self):
         self.prev_coord = set()
@@ -2344,6 +2464,9 @@ class Earthquake(LayerMenu):
                 self.trace_handlers.append((var, trace_id))
 
     def remove_tracers(self):
+        self.previewing.button_final_map.configure(state=NORMAL)
+        self.previewing.button_preview.configure(state=NORMAL)
+        self.previewing.toggle_button_preview_refresh("on")
         for var, trace_id in self.trace_handlers:
             try:
                 var.trace_remove("write", trace_id)
@@ -2364,8 +2487,9 @@ class Earthquake(LayerMenu):
         if self.download_button.cget("state") == DISABLED:
             self.already_downloaded.set(False)
             self.download_button.configure(state=NORMAL)
+            self.previewing.button_final_map.configure(state=DISABLED)
             self.previewing.button_preview.configure(state=DISABLED)
-            self.previewing.button_preview_refresh.configure(state=DISABLED)
+            self.previewing.toggle_button_preview_refresh("off")
 
     def button_downloader(self, tab):
         self.download_button = CTkButton(
@@ -2400,11 +2524,12 @@ class Earthquake(LayerMenu):
             else:
                 subprocess.Popen(["xdg-open", catalog])
         except FileNotFoundError as e:
-            messagebox.showerror(
+            self.previewing.popup_message(
                 "Error", f"Could not open file: {e}\nIs '{catalog}' a valid path?"
             )
+
         except Exception as e:
-            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+            self.previewing.popup_message("Error", f"An unexpected error occurred: {e}")
 
     @property
     def date_strp(self):
@@ -2446,7 +2571,8 @@ class Earthquake(LayerMenu):
             self.main.get_coordinate.coord,
             self.date_strp,
             [self.magnitudes[0].get(), self.magnitudes[1].get()],
-            [self.depths[0].get(), self.depths[1].get()],self.download_queue,
+            [self.depths[0].get(), self.depths[1].get()],
+            self.download_queue,
         )
 
         source = server[self.catalog.get()]
@@ -3027,7 +3153,7 @@ class Inset(ColorOptions):
                 "ML": "1c/0",
             }
             offset = offsets[code]
-        inset_fill = "gmt coast -Glightgreen -Slightblue"
+        inset_fill = "gmt coast -Ggray70 -Slightblue"
         if self.fill.get() == "Custom":
             if hasattr(self.main.get_layers, "coast_i"):
                 inset_fill = self.main.get_layers.coast_i.script
@@ -3901,4 +4027,5 @@ if __name__ == "__main__":
 
 
 def main():
-    MainApp()
+    app = MainApp()
+    return app

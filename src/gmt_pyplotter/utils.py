@@ -6,7 +6,14 @@ from urllib.request import urlretrieve, urlopen
 from urllib.error import URLError
 
 
-def open_file_default_app(messagebox,file_to_open):
+def check_error_obtain_gmt_remote_data(stderr, grd: str = "", res: str = ""):
+    print("CHECKING ERRROR WHEN DOWNLOAD    ")
+    if "Unable to obtain remote file" in stderr:
+        message = f"Couldn't connect to GMT remote server for downloading {grd}{res} data.\nConnect to internet or change network connection."
+        raise ConnectionError(message)
+
+
+def open_file_default_app(messagebox, file_to_open):
     try:
         if sys.platform == "win32":
             os.startfile(file_to_open)
@@ -15,11 +22,15 @@ def open_file_default_app(messagebox,file_to_open):
         else:
             subprocess.Popen(["xdg-open", file_to_open])
     except FileNotFoundError as e:
-        messagebox.showerror(
-            "Error", f"Could not open file: {e}\nIs '{file_to_open}' avalid path?"
+
+        messagebox(
+            "Error", f"Could not open file: {e}\nIs '{file_to_open}' a valid path?"
         )
+
     except Exception as e:
-        messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+        messagebox("Error", f"An unexpected error occurred: {e}")
+
+
 def file_writer(output_file: str, flag: str, text: str):
     with open(output_file, flag, encoding="utf-8") as file:
         file.write(text)
@@ -626,32 +637,22 @@ def grdimage_min_max_interval(grd_: str, coord_r: str):
     """Evaluate the grd_file and return the recomended interval for cpt, elevmin, and elevmax"""
     command = f"gmt grdinfo {grd_}_p {coord_r} -Cn -M -G --GMT_DATA_SERVER=singapore"
     print(command)
-    try:
-        min_, max_, _ = grdimage_min_max(grd_, command)
-        elevmin = round(float(min_), -1)
-        elevmax = round(float(max_), -1)
-        total_elev = elevmax - elevmin
-        interval = 0
-        if total_elev in range(5000, 20000):
-            interval = 1000
-        elif total_elev in range(2500, 5000):
-            interval = 500
-        elif total_elev in range(1000, 2500):
-            interval = 250
-        elif total_elev in range(500, 1000):
-            interval = 100
-        elif total_elev in range(0, 500):
-            interval = 50
-        return elevmin, elevmax, interval
-    except subprocess.CalledProcessError:
-        print("Error calc min-max values")
-        return [0]
-    except ConnectionError as e:
-        print(e)
-        return [0]
-    except ValueError as e:
-        print(e)
-        return [0]
+    min_, max_, _ = grdimage_min_max(grd_, command)
+    elevmin = round(float(min_), -1)
+    elevmax = round(float(max_), -1)
+    total_elev = elevmax - elevmin
+    interval = 0
+    if total_elev in range(5000, 20000):
+        interval = 1000
+    elif total_elev in range(2500, 5000):
+        interval = 500
+    elif total_elev in range(1000, 2500):
+        interval = 250
+    elif total_elev in range(500, 1000):
+        interval = 100
+    elif total_elev in range(0, 500):
+        interval = 50
+    return elevmin, elevmax, interval
 
 
 def grdimage_min_max(grd_, command):
@@ -667,9 +668,7 @@ def grdimage_min_max(grd_, command):
     print(stdout)
     return_code = est_min_max.returncode
     grdinfo = stdout.split("\t")
-    if "Unable to obtain remote file" in stderr:
-        message = f"Couldn't connect to GMT remote server for downloading {grd_} data.\nConnect to internet or change network connection."
-        raise ConnectionError(message)
+    check_error_obtain_gmt_remote_data(stderr=stderr, grd=grd_)
     min_ = grdinfo[5]
     max_ = grdinfo[6]
     if min_.lower() == "nan" or max_.lower() == "nan":
