@@ -7,6 +7,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 from CTkMessagebox import CTkMessagebox
 from tkinter import TclError
+from pathlib import Path
 
 
 # if using conda on ubuntu, there is bug in tkinter for rendering the corner and font
@@ -25,6 +26,8 @@ return_ = "<Return>"
 grid_anot = "grid anot"
 msg_invalid_coord = "invalid coordinate value"
 not_coord = "coordinate not inputed yet"
+script_dir = Path(__file__).resolve().parent
+autosave = os.path.join(script_dir, "saved_param.json")
 
 
 class AutoScrollbar(ctk.CTkScrollbar):
@@ -75,24 +78,33 @@ class GlobeMap:
         self.canvas.focus_set()
 
     def save_state(self):
-        state = {
-            "earth_relief": earth_relief.get(),
-            "grid_color": self.grid_color,
-            "imscale": self.imscale,
-            "xview": self.canvas.xview(),
-            "yview": self.canvas.yview(),
-            "__curr_img": self.__curr_img,
-            "__scale": self.__scale,
-            "container_coords": self.container,
-            "hbar": self.hbar.get(),
-            "vbar": self.vbar.get(),
-        }
-        with open("canvas_state.json", "w") as f:
-            json.dump(state, f)
+        try:
+            with open(autosave, "r") as f:
+                state = json.load(f)
+
+            state["earth_relief"] = earth_relief.get()
+            state["grid_color"] = self.grid_color
+            state["imscale"] = self.imscale
+            state["xview"] = self.canvas.xview()
+            state["yview"] = self.canvas.yview()
+            state["__curr_img"] = self.__curr_img
+            state["__scale"] = self.__scale
+            state["container_coords"] = self.container
+            state["hbar"] = self.hbar.get()
+            state["vbar"] = self.vbar.get()
+
+            with open(autosave, "w") as f:
+                json.dump(state, f, indent=4)
+        except FileNotFoundError:
+            print(f"Error: The file {autosave} was not found.")
+        except json.JSONDecodeError:
+            print(f"Error: The file {autosave} is not a valid JSON file.")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
     def load_state(self):
         try:
-            with open("canvas_state.json", "r") as f:
+            with open(autosave, "r") as f:
                 state = json.load(f)
                 earth_relief.set(state["earth_relief"])
                 self.grid_color = state["grid_color"]

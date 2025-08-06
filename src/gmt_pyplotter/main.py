@@ -282,13 +282,21 @@ class MainApp(ctk.CTk):
         )
 
     def save_state(self):
-        state = {
-            "output_dir": self.get_name.output_dir.get(),
-            "roi": [x.get() for x in roi],
-        }
+        try:
+            with open(autosave, "r") as f:
+                state = json.load(f)
 
-        with open(autosave, "w") as f:
-            json.dump(state, f)
+            state["output_dir"] = self.get_name.output_dir.get()
+            state["roi"] = [x.get() for x in roi]
+
+            with open(autosave, "w") as f:
+                json.dump(state, f, indent=4)
+        except FileNotFoundError:
+            print(f"Error: The file {autosave} was not found.")
+        except json.JSONDecodeError:
+            print(f"Error: The file {autosave} is not a valid JSON file.")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
 
     def closing(self):
         self.save_state()
@@ -1758,11 +1766,17 @@ class Coast(ColorOptions):
         self.color_sea = StringVar(tab, value="lightblue")
         self.outline_color = StringVar(tab, "black")
         self.outline_thickness = StringVar(tab, value=ColorOptions.pens[1])
+        tt_1 = "The color of dry area or island\nUncheck for not fill land"
+        tt_2 = (
+            "The color of wet area like sea or lake\nUncheck for not fill sea surface"
+        )
+        tt_3 = "Line color of the coastal boundary\nUncheck for not plot lines"
+        tt_4 = "Pen thickness of the coastal boundary"
         labels = {
-            "Land Color": "The color of dry area or island\nUncheck for not fill land",
-            "Sea Color": "The color of wet area like sea or lake\nUncheck for not fill sea surface",
-            "Line color": "Line color of the coastal boundary",
-            "Outline size": "Pen thickness of the coastal boundary",
+            "Land Color": tt_1,
+            "Sea Color": tt_2,
+            "Line color": tt_3,
+            "Outline size": tt_4,
         }
         self.menu.parameter_labels(text, labels)
 
@@ -1795,12 +1809,17 @@ class Coast(ColorOptions):
 class GrdImage(ColorOptions):
     def __init__(self, main: MainApp, tab):
         self.main = main
+        tt_1 = "Choose type of data used for grdimage\n[elevation, seafloor age, satelite view, magnetic, gravity]"
+        tt_2 = "Choose data resolution"
+        tt_3 = "Coloring style for the grid image"
+        tt_4 = "Give light shade and the light source azimuth"
+        tt_5 = "Masking the z value with flat color"
         labels = {
-            "Grid data": "Type of data used (elevation, seafloor age, day view, night view, magnetic, gravity)",
-            "Grid resolution": "",
-            "Color Palette Table": "",
-            "Grid Shading": "",
-            "Sea Masking": "",
+            "Grid data": tt_1,
+            "Grid resolution": tt_2,
+            "Color Palette Table": tt_3,
+            "Grid Shading": tt_4,
+            "Sea Masking": tt_5,
         }
         text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
         opti.columnconfigure(5, minsize=80)
@@ -2051,13 +2070,19 @@ class Contour(ColorOptions):
             BooleanVar(tab, value=False),  # toggle unit
         ]
         self.font_size = StringVar(tab, value="9p")
+        tt_1 = "Choose type of data used for grdimage\n[elevation, seafloor age, satelite view, magnetic, gravity]"
+        tt_2 = "Choose data resolution"
+        tt_3 = "Determine contour interval, automatically filled\nwith recomended value based on data"
+        tt_4 = "Choose contour line color"
+        tt_5 = "Thickness of contour lines"
+        tt_6 = "Check for annotate index with given interval\nAnnotate the unit\nFont size of the annotation\nCheck for make the index contour thicker\n Check to plot with darker color"
         labels = {
-            "Grid data": "",
-            "Grid resolution": "",
-            "Contour interval": "",
-            "Color": "",
-            "Thickness": "",
-            "Index contour": "",
+            "Grid data": tt_1,
+            "Grid resolution": tt_2,
+            "Contour interval": tt_3,
+            "Color": tt_4,
+            "Thickness": tt_5,
+            "Index contour": tt_6,
             "7": "",
         }
 
@@ -2409,14 +2434,21 @@ class Earthquake(LayerMenu):
         self.previewing.toggle_button_preview_refresh("off")
         self.after_id = None
         self.download_queue = queue.Queue()
+        tt_1 = "Choose catalog data source"
+        tt_2 = "Pick the start date\nautosync between earthquake and focmec"
+        tt_3 = "Pick the end date\nautosync between earthquake and focmec"
+        tt_4 = "Determine the magnitude range"
+        tt_5 = "Determine the depth range"
+        tt_6 = "Plot size of the earthquake"
+        tt_7 = "Check for fix depth scale based on USGS \nearthquake depth classification\nautosync between earthquake and focmec"
         labels = {
-            "Catalog": "",
-            "Start date": "",
-            "End date": "",
-            "Magnitude": "",
-            "Depth": "",
-            "Size": "",
-            "Depth scale": "",
+            "Catalog": tt_1,
+            "Start date": tt_2,
+            "End date": tt_3,
+            "Magnitude": tt_4,
+            "Depth": tt_5,
+            "Size": tt_6,
+            "Depth scale": tt_7,
         }
         text, self.opti = self.tab_menu_layout_divider(tab)
         self.parameter_labels(text, labels)
@@ -2803,10 +2835,13 @@ class Tectonic(LayerMenu, ColorOptions):
         self.line_thickness = StringVar(tab, ColorOptions.pens[1])
         text, opti = self.tab_menu_layout_divider(tab)
         opti.columnconfigure(5, minsize=100)
+        tt_1 = "Choose geological structure lines (Indonesia only)\nDefault value based on the map area coverage"
+        tt_2 = "Geological structure lines color"
+        tt_3 = "Plot thickness of the lines"
         labels = {
-            "Source data": "",
-            "Line color": "",
-            "Line thickness": "",
+            "Source data": tt_1,
+            "Line color": tt_2,
+            "Line thickness": tt_3,
         }
         self.parameter_fault_data(opti, 1)
         self.parameter_color(opti, 2, self.line_color, False, self.line_thickness)
@@ -2859,12 +2894,6 @@ class Tectonic(LayerMenu, ColorOptions):
 
 
 class Inset(ColorOptions):
-    """
-    -ukuran inset dalam degree (berapa kali dari peta utama, diambil dari yg terbesar(w/h))
-    -ukuran inset dalam cm (berapa persen dari peta utama)
-    -lokasi inset berdasarkan DJ code ditambah offset x dan y dengan slider
-    -isi dalam inset peta coast atau grd (auto, customized)
-    -warna dan ketebalan kotaknya"""
 
     def __init__(self, tab, main: MainApp):
         self.main = main
@@ -2879,13 +2908,20 @@ class Inset(ColorOptions):
         self.rect_color = StringVar(tab, value="red")
         self.rect_thick = StringVar(tab, value="1p")
         self.draw_rect()
+        tt_1 = "The dilatation factor, determine the inset coverage.\nCalculate based on the largest map side (width or height)"
+        tt_2 = "Width of inset map,\npercentage from map width (cm)"
+        tt_3 = "Determine the location of inset map\ninside/outside\nand the location relative to map center"
+        tt_4 = "Style of the inset map, If custom\ndetermine parameter like in coastal line layer"
+        tt_5 = "Choose color for rectangle represent the main map"
+        tt_6 = "Thickness of the rectangle"
+
         labels = {
-            "Area scope": "The dilatation factor, determine the inset coverage.\nCalculate based on the largest map side (width or height)",
-            "Size": "Width of inset map, percentage from map width (cm)",
-            "Location": "",
-            "Fill": "",
-            "Rectangle color": "",
-            "Rectangle thickness": "",
+            "Area scope": tt_1,
+            "Size": tt_2,
+            "Location": tt_3,
+            "Fill": tt_4,
+            "Rectangle color": tt_5,
+            "Rectangle thickness": tt_6,
         }
         text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
         self.code = {
@@ -3208,15 +3244,6 @@ class GrdImageI(GrdImage):
 
 
 class Legend:
-    """
-    auto
-    customize
-    checkboxes  eq size
-                fm size
-                elevation
-                depth
-                eq date
-                `"""
 
     def __init__(self, tab, main: MainApp):
         self.main = main
@@ -3724,13 +3751,16 @@ class Cosmetics(ColorOptions):
         text.rowconfigure(4, minsize=5, weight=0)
         opti.rowconfigure(4, minsize=5, weight=0)
         opti.columnconfigure(0, minsize=50)
+        tt_1 = "Compass style, size and position\nThe position is normalize coordinate\n(0,0) = bottom left corner\n(1,1) = top right corner"
+        tt_2 = "Scalebar style, size is the width of scalebar in kilometers\nThe position is normalize coordinate\n(0,0) = bottom left corner\n(1,1) = top right corner"
+        tt_3 = "Choose the gridline style, color and line thickness"
         labels = {
-            "North Arrow": "",
+            "North Arrow": tt_1,
             "2": "",
-            "Scalebar": "",
+            "Scalebar": tt_2,
             "4": "",
             "5": "",
-            "Gridlines": "",
+            "Gridlines": tt_3,
             "7": "",
         }
         self.parameter_north_arrow(opti, 1)

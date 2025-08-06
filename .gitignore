@@ -1,0 +1,9 @@
+.sonar
+/build
+gmt.history
+src/*.egg-info
+src/gmt_pyplotter/image/*_1.*
+src/gmt_pyplotter/image/*_2.*
+src/gmt_pyplotter/image/*_3.*
+src/gmt_pyplotter/image/*_4.*
+src/gmt_pyplotter/image/*_5.*
