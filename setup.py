@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="gmt_pyplotter",
-    version="v2.0.0",
+    version="v2.0",
     description="Python customtkinter script to plot map with GMT with GUI",
     url="https://github.com/aditdp/gmt_pyplotter_v2.0",
     author="aditdp",

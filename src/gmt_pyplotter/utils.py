@@ -356,7 +356,7 @@ def add_mag_to_meca_file(input_file, output_file, delimiter=" ", output_delimite
                 # Write the new row with Mw appended
                 writer.writerow(row + [mw])
             except ValueError as e:
-                print(f"    Error processing row: {row}. Error: {e}")
+                print(f"Skipping row: {row}. \nError: {e}")
 
 
 def usgs_downloader(dir_name: str, coord, date: list[datetime], mag, depth, queue):
@@ -635,7 +635,7 @@ def recommend_dem_resolution(map_scale_factor, for_contour=False):
 
 def grdimage_min_max_interval(grd_: str, coord_r: str):
     """Evaluate the grd_file and return the recomended interval for cpt, elevmin, and elevmax"""
-    command = f"gmt grdinfo {grd_}_p {coord_r} -Cn -M -G --GMT_DATA_SERVER=singapore"
+    command = f"gmt grdinfo {grd_} {coord_r} -Cn -M -G --GMT_DATA_SERVER=singapore"
     print(command)
     min_, max_, _ = grdimage_min_max(grd_, command)
     elevmin = round(float(min_), -1)
@@ -680,3 +680,32 @@ def grdimage_min_max(grd_, command):
     print(f"max = {max_}")
 
     return min_, max_, return_code
+
+def convert_dd_to_dms(decimal_degrees):
+    """
+    Converts decimal degrees to degrees and minutes.
+
+    Args:
+        decimal_degrees (float): The latitude or longitude in decimal degrees.
+
+    Returns:
+        tuple: A tuple containing the degrees (int) and minutes (float).
+               Returns None if the input is not a valid number.
+    """
+    if not isinstance(decimal_degrees, (int, float)):
+        print("Error: Input must be a number.")
+        return None
+
+    sign = 1 if decimal_degrees >= 0 else -1
+    abs_decimal_degrees = abs(decimal_degrees)
+
+    degrees = int(math.floor(abs_decimal_degrees))
+
+    decimal_part = abs_decimal_degrees - degrees
+
+    minutes_decimal = decimal_part * 60
+    minutes = int(math.floor(minutes_decimal))
+    seconds_part =minutes_decimal-minutes
+    seconds = seconds_part *60
+
+    return f"{sign * degrees}:{minutes}:{seconds:.2f}"

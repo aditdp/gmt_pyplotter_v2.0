@@ -1070,41 +1070,48 @@ class CoordWindow(ctk.CTkToplevel):
                 float(self.globemap.get_coordinate.roi[1].get()),
                 float(self.globemap.get_coordinate.roi[3].get()),
             )
-            mesage = f"Longitude = {x1:>11} — {x2:>10}\nLattitude = {y1:>11} — {y2:>10}\n\nDone selecting coordinate?"
+            mesage = f"Longitude = {x1:>11} — {x2:>10}\nLattitude = {y1:>11} — {y2:>10}\n\nUse selected coordinate?"
             icon = "check"
             self.closing(mesage, icon, roi=[str(x1), str(x2), str(y1), str(y2)])
         elif msg_invalid_coord in self.globemap.get_coordinate.status:
             mesage = "Coordinate not valid,\nDo you want to exit?"
             icon = "cancel"
-            self.closing(mesage, icon)
+            self.closing(mesage, icon, error=True)
 
-    def closing(self, mesage, icon, roi=None):
+    def closing(self, mesage, icon, roi=None, error=False):
+        self.using_coordinate=False
         quiting = CTkMessagebox(
             self,
             title="Exiting coordinate selection",
             message=mesage,
             option_1="No",
             option_2="Yes",
+            option_3="Cancel",
             icon=icon,
             wraplength=300,
             fade_in_duration=100,
             option_focus=2,
             font=("Consolas", 14),
+            button_width=50,
         )
 
         if quiting.get() == "Yes":
-            self.globemap.save_state()
-            self.globemap._pyramid_relief.clear()
-            self.globemap._pyramid_simple.clear()
-            del self.globemap._pyramid[:]
-            del self.globemap._pyramid
-            self.globemap._imframe.destroy()
+            if not error:
+                self.globemap.save_state()
+                self.using_coordinate=True
+        elif quiting.get()=="No":
+            return
+        self.globemap._pyramid_relief.clear()
+        self.globemap._pyramid_simple.clear()
+        del self.globemap._pyramid[:]
+        del self.globemap._pyramid
+        self.globemap._imframe.destroy()
 
-            self.withdraw()
-            self.quit()
-            self.destroy()
-
-            return roi
+        self.withdraw()
+        self.quit()
+        self.destroy()
+            
+            
 
 
 if __name__ == "__main__":

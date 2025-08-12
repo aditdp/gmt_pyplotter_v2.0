@@ -41,7 +41,7 @@ from gmt_pyplotter.utils import (
     recommend_contour_interval,
     gcmt_downloader,
     isc_downloader,
-    usgs_downloader,
+    usgs_downloader, convert_dd_to_dms
 )
 
 if os.name == "nt":
@@ -83,9 +83,9 @@ class MainApp(ctk.CTk):
         self.get_coordinate = MapCoordinate(self, self.frame_map_param)
         self.get_projection = MapProjection(self, self.frame_map_param)
         self.get_layers = LayerMenu(self, self.frame_layers)
+        self.cur_scale = 1
         if os.name == "nt":
             self.button_gui_scaling()
-        self.cur_scale = 1
         self.protocol("WM_DELETE_WINDOW", self.closing)
         self.after(500, self.is_gmt_installed)
         self.mainloop()
@@ -125,8 +125,12 @@ class MainApp(ctk.CTk):
             width=40,
             command=lambda: self.scalling("+"),
         )
+        self.label_gui_scalling = CTkLabel(
+            self.frame_map_param, text=f"{self.cur_scale} x"
+        )
         self.button_gui_larger.place(relx=0.01, rely=0.94)
         self.button_gui_smaller.place(relx=0.22, rely=0.94)
+        self.label_gui_scalling.place(relx=0.5, rely=0.94)
 
     def scalling(self, direction):
         scale_levels = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
@@ -158,6 +162,7 @@ class MainApp(ctk.CTk):
         ctk.set_window_scaling(new_scale / scalefactor)
         self.cur_scale = new_scale
         print(self.cur_scale)
+        self.label_gui_scalling.configure(text=f"{self.cur_scale} x")
         self.button_gui_larger.place(relx=0.01, rely=0.94)
         self.button_gui_smaller.place(relx=0.22, rely=0.94)
         if self.cur_scale == max(scale_levels):
@@ -223,13 +228,13 @@ class MainApp(ctk.CTk):
                 self.early_exit(0)
 
         getgmtversion = subprocess.Popen(
-            "gmt --version", shell=False, stdout=subprocess.PIPE
+            "gmt --version", shell=os.name == "posix", stdout=subprocess.PIPE
         ).stdout
         if getgmtversion != None:
             gmt_ver = getgmtversion.read()
             gmt_ver = gmt_ver.decode().rstrip()
             try:
-                if float(gmt_ver[0:3]) <= 6.4:
+                if float(gmt_ver[0:3]) < 6.4:
                     self.early_exit(1)
             except ValueError:
                 self.early_exit()
@@ -548,6 +553,15 @@ class MapCoordinate(CTkFrame):
         """
         coord_r = f"-R{roi[0].get()}/{roi[1].get()}/{roi[2].get()}/{roi[3].get()}"
         return coord_r
+    
+    @property
+    def coord_r_dm(self):
+        west = convert_dd_to_dms(self.coord[0])
+        east = convert_dd_to_dms(self.coord[1])
+        south = convert_dd_to_dms(self.coord[2])
+        north = convert_dd_to_dms(self.coord[3])
+        coord_r_dm = f"-R{west}/{east}/{south}/{north}"
+        return coord_r_dm
 
     def update_coor_entry(self):
         self.coord_button.configure(state=DISABLED)
@@ -556,7 +570,11 @@ class MapCoordinate(CTkFrame):
         else:
             coord = roi[0].get(), roi[1].get(), roi[2].get(), roi[3].get()
         get_coord = CoordWindow(coord)
-        acquired_coord = get_coord.return_roi()
+        if get_coord.using_coordinate:
+            acquired_coord = get_coord.return_roi()
+        else:
+            self.coord_button.configure(state=NORMAL)
+            return
 
         try:
             float(acquired_coord[0])
@@ -567,9 +585,10 @@ class MapCoordinate(CTkFrame):
             self.coord_picked = True
             self.coord_button.configure(text="Edit Coordinate")
             self.main.get_projection.update_map_scale()
-        except ValueError:
+        except (ValueError, TypeError):
             pass
-        self.coord_button.configure(state=NORMAL)
+        finally:
+            self.coord_button.configure(state=NORMAL)
 
 
 class MapProjection(CTkFrame):
@@ -745,7 +764,7 @@ class LayerMenu:
         self.button_frame = CTkFrame(
             mainframe, fg_color="transparent", width=490, height=10
         )
-        self.button_frame.pack(side="top", pady=0, fill="both", expand=False)
+        self.button_frame.pack(side="top", pady=5, fill="both", expand=False)
 
         self.layer_control = ctk.CTkTabview(
             mainframe,
@@ -758,7 +777,7 @@ class LayerMenu:
             height=490,
             width=490,
         )
-        self.layer_control.pack(side="top", expand=1, fill="both", padx=(0, 5))
+        self.layer_control.pack(side="top", expand=True, fill="both", padx=(0, 5))
 
         self.layers = []
         self.add_remove_layer()
@@ -774,24 +793,26 @@ class LayerMenu:
         )
         del_tab_button.pack(side="left", padx=10)
 
-        options = [
-            "Coastal line",
-            "Earth relief",
-            "Contour line",
-            "Earthquake plot",
-            "Focal mechanism",
-            "Regional tectonics",
-            "Map inset",
-            "Legend",
-            "Cosmetics",
-        ]
+        self.layers_dict = {
+            "Coastal line":"coast",
+            "Earth relief":"relief",
+            "Contour line":"contour",
+            "Earthquake plot":"earthquake",
+            "Focal mechanism":"focmec",
+            "Regional tectonics":"tecto",
+            "Map inset":"inset",
+            "Legend":"legend",
+            "Cosmetics":"cosmetic",
+        }
+        self.layers_list = list(self.layers_dict.values())
+        
 
         button_add_layer = CTkButton(self.button_frame, text="Add layer", width=20)
         button_add_layer.pack(side="left", padx=10)
 
         CTkScrollableDropdown(
             button_add_layer,
-            values=options,
+            values=self.layers_dict.keys(),
             justify="left",
             height=290,
             width=200,
@@ -816,48 +837,47 @@ class LayerMenu:
             font=("Consolas", 12),
         )
 
-        if delete_layer == "Yes":
-            return
-        self.delete_variable(active_tab)
+        if delete_layer.get() == "Yes":
+            self.delete_variable(active_tab)
 
     def delete_variable(self, active_tab):
         self.layers.remove(active_tab)
         match active_tab:
-            case "Coastal line":
+            case "coast":
                 del self.coast
-            case "Earth relief":
+            case "relief":
                 if self.grdimage.after_id:
                     self.main.after_cancel(self.grdimage.after_id)
                 self.grdimage.remove_tracers()
                 del self.grdimage
-            case "Contour line":
+            case "contour":
                 if self.contour.after_id:
                     self.main.after_cancel(self.contour.after_id)
                 self.contour.remove_traces()
                 del self.contour
-            case "Earthquake plot":
+            case "earthquake":
                 if self.earthquake.after_id:
                     self.main.after_cancel(self.earthquake.after_id)
                 self.earthquake.remove_tracers()
                 del self.earthquake
-            case "Focal mechanism":
+            case "focmec":
                 if self.focmec.after_id:
                     self.main.after_cancel(self.focmec.after_id)
                 self.focmec.remove_tracers()
                 del self.focmec
-            case "Regional tectonics":
+            case "tecto":
                 del self.tectonics
-            case "Map inset":
+            case "inset":
                 del self.inset
-            case "Legend":
+            case "legend":
                 del self.legend
-            case "Cosmetics":
+            case "cosmetics":
                 del self.cosmetics
         self.layer_control.delete(active_tab)
 
     def add_tab(self, choice):
 
-        layer = choice
+        layer = self.layers_dict[choice]
         try:
             new_layer = self.layer_control.add(layer)
         except ValueError:
@@ -869,24 +889,24 @@ class LayerMenu:
 
         self.layer_control.set(layer)
 
-        match choice:
-            case "Coastal line":
+        match layer:
+            case "coast":
                 self.coast = Coast(new_layer, self)
-            case "Earth relief":
+            case "relief":
                 self.grdimage = GrdImage(self.main, new_layer)
-            case "Contour line":
+            case "contour":
                 self.contour = Contour(self.main, new_layer)
-            case "Earthquake plot":
+            case "earthquake":
                 self.earthquake = Earthquake(new_layer, self.main, self.main.dates)
-            case "Focal mechanism":
+            case "focmec":
                 self.focmec = Focmec(new_layer, self.main, self.main.dates)
-            case "Regional tectonics":
+            case "tecto":
                 self.tectonics = Tectonic(new_layer, self.main)
-            case "Map inset":
+            case "inset":
                 self.inset = Inset(new_layer, self.main)
-            case "Legend":
+            case "legend":
                 self.legend = Legend(new_layer, self.main)
-            case "Cosmetics":
+            case "cosmetics":
                 self.cosmetics = Cosmetics(new_layer, self.main)
             case "coast_i":
                 self.coast_i = Coast(new_layer, self)
@@ -941,7 +961,14 @@ class MapPreview:
         self.preview_status = "off"
         self.button_ = button_frame
         self.preview_queue = queue.Queue()
+        self.output_dir = self.main.get_name.output_dir.get()
         self.map_preview_buttons()
+        self.w_info = CTkLabel(
+            self.main.frame_layers,
+            text="",
+            anchor="e",font=("Consolas", 12), height=14
+        )
+        self.w_info.place(anchor="se", relx=1, rely=1)
         self.main.after(100, self._check_queue)
 
     def map_preview_buttons(self):
@@ -1005,11 +1032,12 @@ class MapPreview:
         if self.preview_status == "off":
             self.prev_coord = {r.get() for r in roi}
             self.button_preview.configure(state=DISABLED)
+            self.button_final_map.configure(state=DISABLED)
             self.print_script(True)
-
+            
             self.threading_process(
                 self.gmt_execute,
-                args=[f"prev_{self.main.get_name.name_script}"],
+                args=[f"prev_{self.main.get_name.name_script}", ],
                 name="generate Preview Map",
                 use_="preview",
             )
@@ -1027,6 +1055,7 @@ class MapPreview:
 
             self.preview_status = "off"
             self.button_preview.configure(state=NORMAL)
+            self.button_final_map.configure(state=NORMAL)
             self.toggle_button_preview_refresh("forget")
             return
         print(message)
@@ -1053,6 +1082,7 @@ class MapPreview:
         self.button_preview_refresh.pack(side="left", padx=3)
         self.canvas.create_image(5, 0, image=self.imagetk, anchor="nw", tags="map")
         self.button_preview.configure(state=NORMAL)
+        self.button_final_map.configure(state=NORMAL)
         self.preview_status = "on"
         self.toggle_button_preview_refresh("on")
 
@@ -1068,6 +1098,7 @@ class MapPreview:
     def map_preview_refresh(self):
 
         self.button_preview.configure(state=DISABLED)
+        self.button_final_map.configure(state=DISABLED)
         self.toggle_button_preview_refresh("off")
         self.block_canvas_loading()
         self.print_script(True)
@@ -1121,6 +1152,7 @@ class MapPreview:
 
         self.canvas.delete("loading")
         self.button_preview.configure(state=NORMAL)
+        self.button_final_map.configure(state=NORMAL)
         self.toggle_button_preview_refresh("on")
 
     def print_script(self, preview=False):
@@ -1131,7 +1163,7 @@ class MapPreview:
             prefix = "preview_"
             exten = "png"
             gmt_script_file = self.main.get_name.dir_prename_script
-        bounds = self.main.get_coordinate.coord_r
+        bounds = self.main.get_coordinate.coord_r_dm
 
         fname = self.main.get_name.file_name.get()
         if os.path.exists(gmt_script_file):
@@ -1146,33 +1178,33 @@ class MapPreview:
             )
             script_text.write("\tgmt set GMT_DATA_SERVER singapore\n")
             script_text.write(f"\tgmt basemap {bounds} -JM{width}c  -Baf+e\n")
-            if "Earth relief" in _layers.layers:
+            if "relief" in _layers.layers:
                 script_text.write(f"\t{_layers.grdimage.script}\n")
 
-            if "Coastal line" in _layers.layers:
+            if "coast" in _layers.layers:
                 script_text.write(f"\t{_layers.coast.script}\n")
 
-            if "Contour line" in _layers.layers:
+            if "contour" in _layers.layers:
                 script_text.write(f"\t{_layers.contour.script}\n")
-            if "Cosmetics" in _layers.layers:
+            if "cosmetics" in _layers.layers:
                 script_text.write(f"\t{_layers.cosmetics.script_grid}\n")
 
-            if "Regional tectonics" in _layers.layers:
+            if "tecto" in _layers.layers:
                 script_text.write(f"\t{_layers.tectonics.script}\n")
 
-            if "Earthquake plot" in _layers.layers:
+            if "earthquake" in _layers.layers:
                 script_text.write(f"\t{_layers.earthquake.script}\n")
 
-            if "Focal mechanism" in _layers.layers:
+            if "focmec" in _layers.layers:
                 script_text.write(f"\t{_layers.focmec.script}\n")
 
-            if "Map inset" in _layers.layers:
+            if "inset" in _layers.layers:
                 script_text.write(f"\t{_layers.inset.script}\n")
 
-            if "Legend" in _layers.layers:
+            if "legend" in _layers.layers:
                 script_text.write(f"\t{_layers.legend.script}\n")
 
-            if "Cosmetics" in _layers.layers:
+            if "cosmetics" in _layers.layers:
                 script_text.write(f"\t{_layers.cosmetics.script}\n")
 
             script_text.write("gmt end\n")
@@ -1189,9 +1221,11 @@ class MapPreview:
         self.process_thread.start()
 
     def gmt_execute(self, script_name, use_: str):
+        self.error_occurs=False
         cwd = os.getcwd()
-        output_dir = self.main.get_name.output_dir.get()
+        output_dir = self.output_dir
         os.chdir(output_dir)
+        self._check_queue_info()
 
         if os.name == "posix":
             os.system(f"chmod +x {script_name}")
@@ -1216,12 +1250,12 @@ class MapPreview:
 
             stdout_reader_thread = threading.Thread(
                 target=self._read_pipe,
-                args=(process.stdout, self.preview_queue, "STDOUT"),
+                args=(process.stdout, "STDOUT"),
                 name=f"{threading.current_thread().name}-StdoutReader",
             )
             stderr_reader_thread = threading.Thread(
                 target=self._read_pipe,
-                args=(process.stderr, self.preview_queue, "STDERR"),
+                args=(process.stderr, "STDERR"),
                 name=f"{threading.current_thread().name}-StderrReader",
             )
 
@@ -1261,13 +1295,29 @@ class MapPreview:
         finally:
             os.chdir(cwd)
 
-    def _read_pipe(self, pipe, main_queue: queue.Queue, pipe_type: str):
+    def _read_pipe(self, pipe, pipe_type: str):
         """Reads lines from a pipe and prints them, also sending to main_queue if needed."""
         for line in iter(pipe.readline, ""):
             if line:
-                print(f"[{pipe_type}] {line.strip()}")
-
+                message = line.strip()
+                print(f"{message}")
+                
+                if pipe_type =="STDOUT":
+                    self.preview_queue.put(("STDOUT", message))
+                    
+                elif "[ERROR]" in line:
+                    self.preview_queue.put(("ERROR", message))
+                    
+                elif "[NOTICE]" in line:
+                    self.preview_queue.put(("NOTICE", message))
+                    
         pipe.close()
+        self.preview_queue.put(("DONE", ""))
+    
+    def popup_error_execute_gmt(self, message) :
+        if not self.error_occurs:
+            self.popup_message("Error", message)
+            self.error_occurs=True
 
     def _check_queue(self):
         try:
@@ -1286,15 +1336,42 @@ class MapPreview:
                 if self.preview_status == "on":
                     self.map_preview_off()
                 self.button_preview.configure(state=NORMAL)
+                self.button_final_map.configure(state=NORMAL)
+                
                 self.toggle_button_preview_refresh("remove")
-
                 return
 
         except queue.Empty:
             pass
 
         self.main.after(500, self._check_queue)
-
+    def _check_queue_info(self):
+        reschedule = True
+        try:
+            status, message = self.preview_queue.get_nowait()
+            if status =="STDOUT":
+                self.w_info.configure(text=f"{message}", fg_color="gray",text_color="white")
+            elif status =="ERROR":
+                self.w_info.configure(text=f"{message}", fg_color="red",text_color="white")
+                if "grdblend" in message:
+                    message=message+"\n\nReduce the resolution to '15s'!"
+                if "Libcurl" in message:
+                    message=message+"\n\nNo internet connection or server down!"
+                self.popup_error_execute_gmt(message)
+            elif status =="NOTICE":
+                self.w_info.configure(text=f"{message}", fg_color="yellow",text_color="gray8")
+            elif status =="DONE":
+                self.w_info.configure(text="")
+                reschedule=False
+            elif status=="CPT":
+                self.button_preview.configure(state=NORMAL)
+                self.toggle_button_preview_refresh("on")
+                self.button_final_map.configure(state=NORMAL)
+                reschedule=False
+        except queue.Empty:
+            pass
+        if reschedule:
+            self.main.after(100, self._check_queue_info)
     def loading_image(self):
         gui = float(self.main.cur_scale)
         image = Image.open(self.main.get_name.dir_prename_map)
@@ -1352,29 +1429,13 @@ class GrdOptions:
         "Earth Free Air Gravity Anomalies v32 [IGPP]",
         "Earth Free Air Gravity Anomalies Errors v32 [IGPP]",
     ]
-
-    _unit = {
-        "@earth_relief_": ("m", "Elevation"),
-        "@earth_synbath_": ("m", "Elevation"),
-        "@earth_gebco_": ("m", "Elevation"),
-        "@earth_age_": ("Myr", '"Seafloor Age"'),
-        "@earth_day_": ("", ""),
-        "@earth_night": ("", ""),
-        "@earth_mag_": ("nTesla", '"Magnetic Anomalies at sea-level"'),
-        "@earth_mag4km_": ("nTesla", '"Magnetic Anomalies at 4km altitude"'),
-        "@earth_wdmam_": ("nTesla", '"Magnetic Anomalies"'),
-        "@earth_vgg_": ("Eotvos", '"Gravity Gradient Anomalies"'),
-        "@earth_faa_": ("mGal", '"Gravity Anomalies"'),
-        "@earth_faaerror_": ("mGal", '"Gravity Anomalies Errors"'),
-    }
-
     grd_codes = [
         "@earth_relief_",
         "@earth_synbath_",
         "@earth_gebco_",
         "@earth_age_",
         "@earth_day_",
-        "@earth_night",
+        "@earth_night_",
         "@earth_mag_",
         "@earth_mag4km_",
         "@earth_wdmam_",
@@ -1382,6 +1443,20 @@ class GrdOptions:
         "@earth_faa_",
         "@earth_faaerror_",
     ]
+    _unit = {
+        grd_codes[0]: ("m", "Elevation"),
+        grd_codes[1]: ("m", "Elevation"),
+        grd_codes[2]: ("m", "Elevation"),
+        grd_codes[3]: ("Myr", '"Seafloor Age"'),
+        grd_codes[4]: ("", ""),
+        grd_codes[5]: ("", ""),
+        grd_codes[6]: ("nTesla", '"Magnetic Anomalies at sea-level"'),
+        grd_codes[7]: ("nTesla", '"Magnetic Anomalies at 4km altitude"'),
+        grd_codes[8]: ("nTesla", '"Magnetic Anomalies"'),
+        grd_codes[9]: ("Eotvos", '"Gravity Gradient Anomalies"'),
+        grd_codes[10]: ("mGal", '"Gravity Anomalies"'),
+        grd_codes[11]: ("mGal", '"Gravity Anomalies Errors"'),
+    }
 
     gmt_grd_dict = {
         _grd_fullname[0]: [grd_codes[0]] + _res,
@@ -1397,18 +1472,9 @@ class GrdOptions:
         _grd_fullname[10]: [grd_codes[10]] + _res[4:],
         _grd_fullname[11]: [grd_codes[11]] + _res[4:],
     }
-    gmt_ctr_dict = {
-        _grd_fullname[0]: [grd_codes[0]] + _res,
-        _grd_fullname[1]: [grd_codes[1]] + _res,
-        _grd_fullname[2]: [grd_codes[2]] + _res,
-        _grd_fullname[3]: [grd_codes[3]] + _res[4:],
-        _grd_fullname[6]: [grd_codes[6]] + _res[5:],
-        _grd_fullname[7]: [grd_codes[7]] + _res[5:],
-        _grd_fullname[8]: [grd_codes[8]] + _res[6:],
-        _grd_fullname[9]: [grd_codes[9]] + _res[4:],
-        _grd_fullname[10]: [grd_codes[10]] + _res[4:],
-        _grd_fullname[11]: [grd_codes[11]] + _res[4:],
-    }
+    gmt_ctr_dict = gmt_grd_dict.copy()
+    gmt_ctr_dict.pop(_grd_fullname[4])
+    gmt_ctr_dict.pop(_grd_fullname[5])
 
     def __init__(
         self,
@@ -1809,6 +1875,7 @@ class Coast(ColorOptions):
 class GrdImage(ColorOptions):
     def __init__(self, main: MainApp, tab):
         self.main = main
+        self.preview= self.main.get_layers.previewing
         tt_1 = "Choose type of data used for grdimage\n[elevation, seafloor age, satelite view, magnetic, gravity]"
         tt_2 = "Choose data resolution"
         tt_3 = "Coloring style for the grid image"
@@ -1824,7 +1891,7 @@ class GrdImage(ColorOptions):
         text, opti = self.main.get_layers.tab_menu_layout_divider(tab)
         opti.columnconfigure(5, minsize=80)
         resolution = self.update_resolution()
-        self.grdimg_cpt_color = StringVar(opti, value="geo")
+        self.grdimg_cpt_color = StringVar(opti, value="Default")
         self.grdimg_shading = StringVar(opti, "on")
         self.grdimg_shading_az = StringVar(opti, value="-45")
         self.masking_color = StringVar(opti, value="lightblue")
@@ -1872,6 +1939,7 @@ class GrdImage(ColorOptions):
 
             self.res.set(new_res)
             self.update_resolution()
+            self.determine_cpt_script()
         self.after_id = self.main.after(100, self.roi_changes_check)
 
     def parameter_cpt(self, opti, row):
@@ -1879,7 +1947,7 @@ class GrdImage(ColorOptions):
         entry = CTkOptionMenu(
             opti,
             variable=self.grdimg_cpt_color,
-            values=palette_cpt,
+            values=["Default"] +palette_cpt,
             fg_color="#565B5E",
             button_color="#565B5E",
             button_hover_color="#7A848D",
@@ -1887,7 +1955,7 @@ class GrdImage(ColorOptions):
         )
         CTkScrollableDropdown(
             entry,
-            values=palette_cpt,
+            values=["Default"] +palette_cpt,
             command=lambda e: self.grdimg_cpt_color.set(e),
             width=200,
             height=300,
@@ -1940,7 +2008,14 @@ class GrdImage(ColorOptions):
         return self.main.get_projection.map_scale_factor
 
     def determine_cpt_script(self, *_):
-        remote_data = f"{self.grd.get()}{self.res.get()}"
+        if self.grd.get() in GrdOptions.grd_codes[4:6]:
+            if hasattr(self, "cpt_script"):
+                del self.cpt_script
+            return
+        self.preview.button_preview.configure(state=DISABLED)
+        self.preview.toggle_button_preview_refresh("off")
+        self.preview.button_final_map.configure(state=DISABLED)
+        remote_data = f"{self.grd.get()}03m"
         coord_r = self.main.get_coordinate.coord_r
         selected_cpt = self.grdimg_cpt_color.get()
         cpt_thread = threading.Thread(
@@ -1957,6 +2032,47 @@ class GrdImage(ColorOptions):
         cpt_thread.daemon = True
         cpt_thread.start()
 
+    def is_default_cpt(self, remote_data,min_, max_,bg):
+        selected_cpt=f"{remote_data[:-4]}.cpt"
+        new_interval = round((max_-min_)/6)
+        min_round = round(min_ / new_interval)
+        max_round = min_round+(new_interval*6)
+        limit = f"-T{min_round}/{max_round}"
+        return f"gmt makecpt {limit} -C{selected_cpt} {bg}"
+    
+    def is_non_default_cpt(self, remote_data, selected_cpt, min_, max_, interval, override_m, cbg, bg):
+        if selected_cpt=="Default":
+            selected_cpt ="geo"
+        if (
+            palette_name[selected_cpt][0] != 9
+            and remote_data[:-3] in self.gmt_grd.grd_codes[0:3]
+        ):
+            low = palette_name[selected_cpt][0]
+            high = palette_name[selected_cpt][1]
+            clamped_min = max(min_, low)
+            clamped_max = min(max_, high)
+            limit = f"-G{clamped_min}/{clamped_max}"
+            print("NORMAL")
+
+            if high == 0:
+                print("LAUT")
+                min_round = round(min_ / interval) * interval
+                limit = f"-T{min_round}/0/{interval} {override_m} --COLOR_FOREGROUND=darkolivegreen3"
+            if low == 0:
+                print("DEM")
+                max_round = round(max_ / interval) * interval
+                limit = f"-T0/{max_round}/{interval} {override_m} {cbg}"
+
+        else:
+            print("CUSTOM")
+            new_interval = round((max_-min_)/6)
+            min_round = round(min_ / new_interval)
+            max_round = min_round+(new_interval*6)
+            limit = f"-T{min_round}/{max_round}/{new_interval}"
+
+        return f"gmt makecpt {limit} -C{selected_cpt} {bg} -Z"
+        
+    
     def grd_cpt(
         self,
         dir_name,
@@ -1966,54 +2082,38 @@ class GrdImage(ColorOptions):
         masking: bool,
         masking_color: str,
     ):
+        self.preview._check_queue_info()
+        cbg = "--COLOR_BACKGROUND=azure"
         bg = ""
+        override_m = "-M"
         try:
             min_, max_, interval = grdimage_min_max_interval(remote_data, coord_r)
             print(f"min = {min_}")
             print(f"max = {max_}")
             print(f"intv= {interval}")
         except ConnectionError as e:
-            self.main.get_layers.previewing.popup_message("Error", e, "warning")
-            return ""
+            self.preview.popup_message("Error", e, "warning")
+            return 
         except ValueError as e:
-            self.main.get_layers.previewing.popup_message("Error", e, "warning")
-            return ""
+            self.preview.popup_message("Error", e, "warning")
+            return 
         if masking:
             bg = f"-M --COLOR_BACKGROUND={masking_color}"
             min_ = 0
+            override_m = ""
+            cbg = ""
         cpt_file = f"{dir_name}-Z.cpt"
 
-        if (
-            palette_name[selected_cpt][0] != 9
-            and self.grd.get() in self.gmt_grd.grd_codes[0:3]
-        ):
-            low = palette_name[selected_cpt][0]
-            high = palette_name[selected_cpt][1]
-            clamped_min = max(min_, low)
-            clamped_max = min(max_, high)
-            limit = f"-G{clamped_min}/{clamped_max}"
-            print("NORMAL")
-            if high == 0:
-                print("LAUT")
-                min_round = round(min_ / interval) * interval
-                limit = (
-                    f"-T{min_round}/0/{interval} -M --COLOR_FOREGROUND=darkolivegreen3"
-                )
-            if low == 0:
-                print("DEM")
-                max_round = round(max_ / interval) * interval
-                limit = f"-T0/{max_round}/{interval} -M --COLOR_BACKGROUND=azure"
-
+        if selected_cpt =="Default" and remote_data[:-4] not in ["@earth_relief", "@earth_synbath", "@earth_gebco"]:
+            print("default cpt")
+            makecpt= self.is_default_cpt(remote_data,min_, max_,bg)
         else:
-            print("CUSTOM")
-            min_round = round(min_ / interval)
-            limit = f"-T{min_}/{max_}/{interval}"
-
-        makecpt = f"gmt makecpt {limit} -C{selected_cpt} {bg}"
+            
+            makecpt = self.is_non_default_cpt(remote_data, selected_cpt, min_, max_, interval, override_m, cbg, bg)
 
         try:
             final_cpt = subprocess.run(
-                f"{makecpt} -Z > {cpt_file}",
+                f"{makecpt} > {cpt_file}",
                 shell=os.name == "posix",
                 capture_output=True,
                 text=True,
@@ -2025,16 +2125,21 @@ class GrdImage(ColorOptions):
                 print("GRDINFO ERROR")
                 print(makecpt)
                 print(grdinfo_err)
+                if hasattr(self, "cpt_script"):
+                    del self.cpt_script
             else:
                 print("GRDINFO NORMAL")
                 print(makecpt)
                 print(grdinfo)
                 self.cpt_script = makecpt
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as err_info:
             print("SUBPROCESS ERROR")
             print(makecpt)
+            print(err_info)
             if hasattr(self, "cpt_script"):
                 del self.cpt_script
+        finally:
+            self.preview.preview_queue.put(("CPT", ""))
 
     @property
     def script(self):
@@ -2050,7 +2155,7 @@ class GrdImage(ColorOptions):
             6:
         ] and hasattr(self, "cpt_script"):
             cpt_file = f"-C{self.main.get_name.name}-Z.cpt"
-            makecpt = f"{self.cpt_script} -Z -H > {cpt_file}\n"
+            makecpt = f"{self.cpt_script} -H > {cpt_file}\n"
         if self.masking.get():
             sea_mask = f"\n\tgmt coast -S{self.masking_color.get()}"
         return f"{makecpt}\tgmt grdimage {remote_data} {shade} {cpt_file} {sea_mask}"
@@ -3300,9 +3405,13 @@ class Legend:
                     self.widgets[i].deselect()
 
     def _widget_toggle_grd(self):
-        if hasattr(self.main.get_layers, "grdimage") and hasattr(
-            self.main.get_layers.grdimage, "cpt_script"
+        if (
+            hasattr(self.main.get_layers, "grdimage")
+            and hasattr(self.main.get_layers.grdimage, "cpt_script")
+            and self.main.get_layers.grdimage.grd.get()
+            not in GrdOptions.grd_codes[4:6]
         ):
+
             if self.widgets[7].cget("state") == DISABLED:
                 self.widgets[7].configure(state=NORMAL)
                 self.widgets[7].select()
@@ -3524,8 +3633,10 @@ G 0.2c
             width += self.eq_td + 1
         if hasattr(self, "fm_td"):
             width += self.fm_td + 1
-        if width < 0.35 * map_width:
+        if map_width>=14 and width < 0.35 * map_width :
             width = map_width * 0.35
+        elif width<=14 and width < 5:
+            width = 5
         if hasattr(self, "short_colorbar"):
             width += self.short_colorbar
         else:
@@ -3658,10 +3769,13 @@ G 0.2c
         type_ = self.main.get_layers.grdimage.gmt_grd.type
         font = "12p"
         sidebar = ""
-        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][1] == 0:
-            sidebar = "+ef0.3c"
-        if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][0] == 0:
-            sidebar = "+eb0.3c"
+        try:
+            if palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][1] == 0:
+                sidebar = "+ef0.3c"
+            elif palette_name[self.main.get_layers.grdimage.grdimg_cpt_color.get()][0] == 0:
+                sidebar = "+eb0.3c"
+        except KeyError:
+            pass
         offset, width = self.z_ow
         elev_label = f"-Bx+l{type_} -By+l{unit} --FONT_LABEL={font} --FONT_ANNOT={font} --MAP_FRAME_PEN=0.75p\n"
         elev_colorbar_plot = f"\tgmt colorbar -DJBC{offset}{width}+h{sidebar} -C{self.main.get_name.name}-Z.cpt {elev_label}\n"
